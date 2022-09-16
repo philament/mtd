@@ -4,7 +4,7 @@ Title: Provides the Ability To Create Modified Target Diagrams
 Version: 0.1.0
 Author: Michel Gerboles, Sinan Yatkin, ...
 Maintainer: Philipp Schneider <ps@nilu.no>
-Description: This function creates a plot of a Modified Target Diagram according to Yatkin et al. (2022). Such diagrams are useful for comparing, for example,
+Description: This package creates a plot of a Modified Target Diagram according to Yatkin et al. (2022). Such diagrams are useful for comparing, for example,
     a low-cost air quality sensor against reference instrumentation.
 License: What license is it under? TBD
 Encoding: UTF-8

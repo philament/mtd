@@ -18,7 +18,7 @@
 #' @param unit_sensor Optional. Character string prodiving the unit of the sensor values (one of "ppm", "ppb", "ug/m3", "mg/m3"). Default is 'ug/m3'.
 #' @param x_axis_label,y_axis_label Optional. Character string. Labels of the x and y axes.
 #' @param x_lim,y_lim Optional. Numeric vectors of two values min and max values. Limits of x and y axis, default values is NA. [DOES NOT WORK CURRENTLY]
-#' @param sensor_name name of the sensor to be written in front of the calibration equation. If NULL, do not print sensor name.
+#' @param sensor_name Optional. Character string. Name of the sensor to be written in front of the calibration equation. If NULL (default), do not print sensor name.
 #'
 #' @return A plot
 #' @export
