@@ -41,7 +41,7 @@ mtd(
 
 \item{x_lim, y_lim}{Optional. Numeric vectors of two values min and max values. Limits of x and y axis, default values is NA. [DOES NOT WORK CURRENTLY]}
 
-\item{sensor_name}{name of the sensor to be written in front of the calibration equation. If NULL, do not print sensor name.}
+\item{sensor_name}{Optional. Character string. Name of the sensor to be written in front of the calibration equation. If NULL (default), do not print sensor name.}
 }
 \value{
 A plot
