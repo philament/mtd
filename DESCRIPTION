@@ -1,0 +1,23 @@
+Package: mtd
+Type: Package
+Title: Provides the Ability To Create Modified Target Diagrams
+Version: 0.1.0
+Author: Michel Gerboles, Sinan Yatkin, ...
+Maintainer: Philipp Schneider <ps@nilu.no>
+Description: This function creates a plot of a Modified Target Diagram according to Yatkin et al. (2022). Such diagrams are useful for comparing, for example,
+    a low-cost air quality sensor against reference instrumentation.
+License: What license is it under? TBD
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.1
+Imports: 
+    data.table,
+    car,
+    futile.logger,
+    lmtest,
+    MethComp,
+    plotrix,
+    shape,
+    skedastic
+Depends: 
+    R (>= 2.10)
