@@ -83,7 +83,4 @@ mtd <- function(pollutant, dates, reference_data, sensor_data, ubs_rm, ubss, uni
                    Xlim = x_lim,
                    Ylim = y_lim
                    )
-
-
-
 }
