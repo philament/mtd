@@ -263,19 +263,16 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
 }
 
 
-#' Get Critical Value, Information Threshold, Alert Threshold,
-#' Limit Value, Upper Assessment Threshold, Lower Assessment Threshold
-#' Data Quality Objectives from name of the molecule, Molecule or from sensor name. ---
-#'
+#' @description  Get Critical Value, Information Threshold, Alert Threshold, Limit Value, Upper Assessment Threshold, Lower Assessment Threshold and Data Quality Objectives from name of the molecule, the molecule or the sensor name according to what is set into the European Air Quality Directive (2008). ---
 #' @param name.gas,name.sensor,gas.sensor character strings, default is NULL. One of them shall not be NULL, Molecule or pollutant symbol (CO, CO2, NO, NO2, O3, PM1, PM1, PM10, PM2.5),
 #'  brand name of sensor (CO_A4_P1, D300, NO_B4_P1, NO2_B43F_P1, OX_A431_P1, 5301CAT, 5301CST, OPCN3PM1, 5310CAT, 5310CST, OPCN3PM10, 5325CAT, 5325CST, OPCN3PM25) and
 #'   molecule name("Carbon_monoxide", "Nitrogen_dioxide", "Nitric_oxide", "Ozone", "Sulphur_dioxide", "Benzene", "Particulate_Matter_10", "PM10_PMSCal", "Particulate_Matter_25", "PM25_PMSCal", "Carbon_dioxide")
-#' @param Averaging.Period  character, Averaging periods as defined in the European Air Quality Directive.
+#' @param Averaging.Period  character, Averaging periods as defined in the European Air Quality Directive. 
 #' The Averaging Period changes the LV of pollutants. Values can be: "1hour", "8hour" and "1year". Default is "1hour"
 #' @param unit.ref  character, units in which parameters are returned. It can be: "ug/m3", "mg/m3", "ppb" or "ppm". Default is "ug/m3".
 #' @param Candidate  character, Data Quality Objectives as stated in the European Air Quality. It can be "Sensor" or "Model". Default is "Sensor"
 #' According to Candidate the percentage of DQO changes. For "Sensor", the DQO of the CENT TC264/WG42 are used. For "Model" the DQO of the Air Quality Directive are used.
-#' @return a list with , CL, IT, AT = NA, LV, LAT, UAT, DQO.1, DQO.2, DQO.3 with NA for undefined parameters
+#' @return a list with , CL, IT, AT, LV, LAT, UAT, DQO.1, DQO.2, DQO.3 with NA for undefined parameters. They are returned in unit given by unit.ref.
 #'
 #' @import data.table
 #' @import car
@@ -291,12 +288,11 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
 #' @noRd
 #'
 get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Averaging.Period = "1hour", unit.ref = "ppb", Candidate = "Sensor") {
-
     # Determining gas.sensor
-    DT.gas <- data.table::data.table(name.gas    = c("CO"             ,            "CO2",            "CO2",       "NO",         "NO2",         "O3",     "PM1",     "PM1",      "PM1",    "PM10",    "PM10",      "PM10",   "PM2.5",   "PM2.5",     "PM2.5",      "RH",   "RH_int",    "Temp", "Temp_int",  "Press"),
-                                     name.sensor = c("CO_A4_P1"       ,         "SPLCPC",           "D300", "NO_B4_P1", "NO2_B43F_P1", "OX_A431_P1", "5301CAT", "5301CST", "OPCN3PM1", "5310CAT", "5310CST", "OPCN3PM10", "5325CAT", "5325CST", "OPCN3PM25", "SHT31HE",  "SHT31HI", "SHT31TE",  "SHT31TI", "BMP280"),
-                                     gas.sensor  = c("Carbon_monoxide", "Carbon_dioxide", "Carbon_dioxide", "Nitric_oxide", "Nitrogen_dioxide", "Ozone", "PM1_PMSCal", "PM1_PMSraw", "Particulate_Matter_1", "PM10_PMSCal", "PM10_PMSraw", "Particulate_Matter_10", "PM25_PMSCal", "PM25_PMSraw", "Particulate_Matter_25", "Relative_humidity", "Relative_humidity_int", "Temperature", "Temperature_int", "Atmospheric_pressure"))
-
+    DT.gas <- data.table::data.table(name.gas    = c(   "H2O"          ,        "CH4","CO"             ,            "CO2",            "CO2",           "NO",              "NO2",         "O3",        "PM1",        "PM1",                  "PM1",        "PM10",        "PM10",                  "PM10",       "PM2.5",       "PM2.5",                 "PM2.5",                "RH",                "RH_int",        "Temp",        "Temp_int",                "Press"),
+                                     name.sensor = c("MPLCPC"          ,     "LPLCPC","CO_A4_P1"       ,         "SPLCPC",           "D300",     "NO_B4_P1",      "NO2_B43F_P1", "OX_A431_P1",    "5301CAT",    "5301CST",             "OPCN3PM1",     "5310CAT",     "5310CST",             "OPCN3PM10",     "5325CAT",     "5325CST",             "OPCN3PM25",           "SHT31HE",               "SHT31HI",     "SHT31TE",         "SHT31TI",               "BMP280"),
+                                     gas.sensor  = c("K96_Water_vapour","K96_Methane","Carbon_monoxide", "Carbon_dioxide", "Carbon_dioxide", "Nitric_oxide", "Nitrogen_dioxide",      "Ozone", "PM1_PMSCal", "PM1_PMSraw", "Particulate_Matter_1", "PM10_PMSCal", "PM10_PMSraw", "Particulate_Matter_10", "PM25_PMSCal", "PM25_PMSraw", "Particulate_Matter_25", "Relative_humidity", "Relative_humidity_int", "Temperature", "Temperature_int", "Atmospheric_pressure"))
+    
     if (is.null(name.gas) && is.null(name.sensor) && is.null(gas.sensor)){
         stop(futile.logger::flog.error("[get.DQO] either name.gas, name.sensor, gas.sensor shall be given"))
     } else if (!is.null(name.sensor)){
@@ -318,20 +314,33 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
             name.sensor <- DT.gas[row.DT, name.sensor][1]
         } else stop(futile.logger::flog.error("[get.DQO] unknown name.gas"))
     }
-
     # Checking if gas sensors or name.gas is given
     # Checking consistency of arguments
-    if (!gas.sensor %in% c("Carbon_monoxide", "Carbon_dioxide", "Nitrogen_dioxide", "Nitric_oxide", "Ozone", "Sulphur_dioxide", "Benzene",
-                           "Particulate_Matter_10", "PM10_PMSCal", "PM10_PMSraw", "Particulate_Matter_25", "Particulate_Matter_1", "PM25_PMSCal", "PM25_PMSraw",
+    if (!gas.sensor %in% c("K96_Water_vapour","K96_Methane","Carbon_monoxide", "Carbon_dioxide", "Nitrogen_dioxide", "Nitric_oxide", "Ozone", "Sulphur_dioxide", "Benzene",
+                           "Particulate_Matter_10", "PM10_PMSCal", "PM10_PMSraw", "Particulate_Matter_25", "Particulate_Matter_1", "PM25_PMSCal", "PM25_PMSraw", 
                            "PM1_PMSCal", "PM1_PMSraw","Carbon_dioxide", "Relative_humidity", "Relative_humidity_int", "Temperature", "Temperature_int", "Atmospheric_pressure")) {
         return(futile.logger::flog.error("[get.DQO] unknown compound, no DQO"))}
-    if (!Averaging.Period %in% c("1hour", "8hour", "1year")) return(futile.logger::flog.error("[get.DQO] unknown Averaging.Period"))
+    if (!Averaging.Period %in% c("1hour", "8hour", "24hour","1year")) return(futile.logger::flog.error("[get.DQO] unknown Averaging.Period"))
     if (!unit.ref %in% c("ug/m3", "mg/m3", "ppb", "ppm", "percent", "Celsius", "hPa")) return(futile.logger::flog.error("[get.DQO] unknown unit.ref"))
     if (!Candidate %in% c("Sensor", "Model")) return(futile.logger::flog.error("[get.DQO] unknown Candidate"))
     # Limit Value, DQOs, UAT, LAT
     IT = NA
     AT = NA
-    if (name.gas == "CO") {
+    if (name.gas == "H2O") {
+        LV = 2000
+        DQO.1 = 0.25 * LV
+        DQO.2 = 0.75 * LV
+        DQO.3 = 2.00 * LV
+        LAT   = 0.50 * LV
+        UAT   = 0.70 * LV
+    } else if (name.gas == "CH4") {
+        LV = 2000
+        DQO.1 = 0.25 * LV
+        DQO.2 = 0.75 * LV
+        DQO.3 = 2.00 * LV
+        LAT   = 0.50 * LV
+        UAT   = 0.70 * LV
+    } else if (name.gas == "CO") {
         if (unit.ref == "ppm") {
             LV = 10/1.34
         } else if (unit.ref == "ppb") {
@@ -364,7 +373,7 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
         } else if (unit.ref == "ug/m3") {
             LV = 200
             AT = 400
-        } else cat(paste0("Wrong unit for ",gas.sensor))
+        } else cat(paste0("Wrong unit for ",gas.sensor, "\n"))
         DQO.1 = 0.25 * LV
         DQO.2 = 0.75 * LV
         DQO.3 = 2.00 * LV
@@ -379,7 +388,7 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
             LV = 120
             IT = 180
             AT = 240
-        } else cat(paste0("Wrong unit for ",gas.sensor))
+        } else cat(paste0("Wrong unit for ",gas.sensor, "\n"))
         DQO.1 = 0.30 * LV
         DQO.2 = 0.75 * LV
         DQO.3 = 2.00 * LV
@@ -424,7 +433,7 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
         UAT   = 0.70 * LV
     }  else if (name.gas == "PM1") {
         # Fake DQO only for plotting
-        LV    = 10
+        LV    = 20
         IT    = NA
         AT    = NA
         DQO.1 = 0.50 * LV
