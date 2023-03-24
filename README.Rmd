@@ -1,5 +1,5 @@
 ## README
 
-THis R package provides tools for creating Modified Target Diagrams according to 
+This R package provides tools for creating Modified Target Diagrams according to 
 Yatkin, S., Gerboles, M., Borowiak, A., Davila, S., Spinelle, L., Bartonova, A., Dauge, F., Schneider, P., Van Poppel, M., Peters, J., Matheeussen, C., & Signorini, M. (2022). Modified Target Diagram to check compliance of low-cost sensors with the Data Quality Objectives of the European air quality directive. Atmospheric Environment, 273, 118967. https://doi.org/10.1016/j.atmosenv.2022.118967
 
