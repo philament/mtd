@@ -8,21 +8,24 @@
 #' @param Mat : Data.table or DataFrame of data including Case number, Date, x, y + optional ubsRM and/or ubss if ubsRM and/or ubss are not constant for all xi. The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names.
 #' @param ubsRM : numeric (default = NULL ), random standard uncertainty of reference measurements, xis, given as a constant value for all xis reference values.
 #' @param variable.ubsRM : logical, default is FALSE. If FALSE, ubsRM is used as constant random standard uncertainties for all xis reference values. If TRUE ubsRM given in Mat and is used for each reference value
-#' @param perc.ubsRM : numeric default value 0.03. Use to compute ubsRm in case variable.ubsRM is TRUE as Mat$ubsRM = perc.ubsRM * Mat[["xis"]]
+#' @param perc.ubsRM : numeric default value 0.03. Use to compute ubsRm in case variable.ubsRM is TRUE as Mat$ubsRM = perc.ubsRM * Mat[["xis"]] 
 #' @param ubss : numeric (default = NULL ), random standard uncertainty of sensor measurements, yis, given as a constant value for all yis sensor values
 #' @param variable.ubss : logical, default is FALSE. If FALSE, ubss is used as constant random standard uncertainties for all yis sensor values. If TRUE ubss given in Mat and is used for each sensor value
-#' @param perc.ubss : numeric default value 0.03. Use to compute ubss in case variable.ubss is TRUE as Mat$ubss = perc.ubss * Mat[["yis"]]
+#' @param perc.ubss : numeric default value 0.03. Use to compute ubss in case variable.ubss is TRUE as Mat$ubss = perc.ubss * Mat[["yis"]] 
 #' @param Fitted.RS : logical, default is FALSE. If TRUE the square residuals (RS) can be fitted using a General Additive Model, according to the result of provided that the probability that the correlation between xis and RS is null is lower than 0.01, (p < 0.01)
+#' @param Forced.Fitted.RS : logical, default is FALSE. If TRUE even if the variance of residuals is constant, RS is Gam fitted.
 #' @param Regression character, default is "Orthogonal", possible values are "OLS" ,"Deming" and "Orthogonal". For Orthogonal Delta  is 1 and for "Deming" Delta is ubss^2/ubsRM^2. See https://en.wikipedia.org/wiki/Deming_regression
 #' @param Add.ubss : logical, default is TRUE If TRUE ubss is added to  Mat$Rel.RSS. If FALSE ubss is not added to  Mat$Rel.RSS.
 #' @param Verbose : logical, default is FALSE. If TRUE messages are displayed during execution.
-#' @return a list with parameters: "mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD" and "Mat": "case", "Date", "xis", "yis","ubsRM", "RS", "Ur", "U", "Rel.bias", "Rel.RSS"
-#' @details: Homogeneity of variance is tested For the calculation of RSS adding Ur In a New field of Mat
+#' @param Versus character, default is NUL. If not NULL name of the column in data.table Mat which is used with the gam fitting to fit RSi. If NULL, RSi will befitted versus reference data (xis). 
+
+#' @return a list with parameters: "mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD" and a data.table called "Mat" with columns: "case", "Date", "xis", "yis","ubsRM", "RS", "Ur", "U", "Rel.bias", "Rel.RSS"
+#' @details: Homogeneity of variance of residuals is tested For the calculation of RSi adding Ur In a new column of Mat
 #' returning a list with slope (b and ub), intercept (a and ua), the sum of square of residuals (RSS),
 #' the root means square of error (RMSE), the mean bias error (mbe), the coefficeint of correlation (Correlation),
-#' the number of valid measurements (nb), the centred rout mean square of error (CRMSE), the normalised mean standard deviation (NMSD)
-#' and Mat with relative expanded uncertainty
+#' the number of valid measurements (nb), the centered root mean square of error (CRMSE), the normalised mean standard deviation (NMSD) and Mat with relative expanded uncertainty.
 #' Negative Mat$RS - Mat$ubsRM^2) are set to 0
+
 #' @import data.table
 #' @import car
 #' @import futile.logger
@@ -36,33 +39,36 @@
 #'
 #' @noRd
 #'
-U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.03, ubss = NULL, variable.ubss = FALSE, perc.ubss = 0.03, Fitted.RS = FALSE, Regression = "Orthogonal",
+U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.03, ubss = NULL, variable.ubss = FALSE, perc.ubss = 0.03, Fitted.RS = FALSE, Forced.Fitted.RS = FALSE, Regression = "Orthogonal",
                       Verbose = FALSE, Add.ubss = TRUE, Versus = NULL) {
-    library(data.table)
     #checking that the Mat  is not empty
     if (exists("Mat") && !is.null(Mat) && nrow(Mat)>0) {
-
+        
+        # Setting Versus with xis is not NULL
+        if (is.null(Versus)) Versus <- "xis"
+        data.table::setkeyv(Mat, Versus)
+        
         # Setting column names and adding ubsRM and ubss as constant values
-        colnames(Mat) <- c("case", "Date", "xis", "yis","ubsRM", "ubss")[1:length(colnames(Mat))]
-
+        colnames(Mat) <- c("case", "Date", Versus, "yis","ubsRM", "ubss")[1:length(colnames(Mat))]
+        
         # Convert Mat to data.table if needed
-        if (!"data.table" %in% class(Mat)) Mat <- data.table::data.table(Mat, key = "Date")
+        if (!"data.table" %in% class(Mat)) Mat <- data.table(Mat, key = "Date")
         # Filtering for the validation data only
-        Mat <- Mat[is.finite(rowSums(Mat[,.(xis,yis)]))]
+        Mat <- Mat[is.finite(rowSums(Mat[, c(Versus,"yis"), with = FALSE]))]
         if (!nrow(Mat) > 0) return(futile.logger::flog.error("[U_orth_DF] Mat does not contains any complete rows with xis and yis"))
-
+        
         # Setting ubsRM and ubss in Mat
         if (!variable.ubsRM) {
-            if (!is.null(ubsRM)) set(Mat,  j = "ubsRM", value = rep(ubsRM, nrow(Mat)))
+            if (!is.null(ubsRM)) data.table::set(Mat,  j = "ubsRM", value = rep(ubsRM, nrow(Mat))) 
         } else if (!"ubsRM" %in% names(Mat)) {
             return(futile.logger::flog.error("[U_orth_DF] u(bs,RM) not given in data.table Mat. Stopping the function."))
-        }  else Mat$ubsRM = perc.ubsRM * Mat[["xis"]]
+        }  else Mat$ubsRM = perc.ubsRM * Mat[[Versus]]
         if (!variable.ubss) {
-            if (!is.null(ubss)) set(Mat,  j = "ubss", value = rep(ubss, nrow(Mat)))
+            if (!is.null(ubss)) data.table::set(Mat,  j = "ubss", value = rep(ubss, nrow(Mat)))
         } else if (!"ubss" %in% names(Mat)) {
             return(futile.logger::flog.error("[U_orth_DF] u(bs,s) not given in data.table Mat. Stopping the function."))
         } else Mat$ubss = perc.ubss * Mat[["yis"]]
-
+        
         # Determination of delta for Deming or orthogonal regression
         if (Regression == "Deming") {
             if (variable.ubsRM || variable.ubss) {
@@ -76,56 +82,58 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
             Delta <- 1
             futile.logger::flog.info(paste0("[U_orth_DF] regression type: \"",Regression, "\" (Delta = ", Delta,")"))
         } else if (Regression != "OLS") return(futile.logger::flog.error("[U_orth_DF] unknown regression type. Only \"OLS\",  \"Deming\" (Delta is ubss^2/ubsRM^2) or \"orthogonal\" (Delta is 1) regressions can be used"))
-
+        
         # Common parameters
         nb  <- nrow(Mat)
-        mo  <- mean(Mat[["xis"]])
+        mo  <- mean(Mat[[Versus]])
         mm  <- mean(Mat[["yis"]])
-        sdo <- sd(Mat[["xis"]])
+        sdo <- sd(Mat[[Versus]])
         sdm <- sd(Mat[["yis"]])
-        Sxx <- sum((Mat[["xis"]] - mo)^2)
+        Sxx <- sum((Mat[[Versus]] - mo)^2)
         Syy <- sum((Mat[["yis"]] - mm)^2)
-        Sxy <- sum((Mat[["xis"]] - mo) * (Mat[["yis"]] - mm))
+        Sxy <- sum((Mat[[Versus]] - mo) * (Mat[["yis"]] - mm))
         # Linear Regression Orthogonal regression ()
         if (Regression == "Orthogonal") {
             # as in annex b of Guide for The Demonstration of Equivalence
-            m2  <- MethComp::Deming(x = Mat[["xis"]], y = Mat[["yis"]], vr = Delta)
+            m2  <- MethComp::Deming(x = Mat[[Versus]], y = Mat[["yis"]], vr = Delta)
             b1  <- (Syy - Sxx + sqrt((Syy- Sxx)^2 + 4*Sxy^2))/(2*Sxy)
             b0  <- mm - b1 * mo
             ub1 <- sqrt((Syy - (Sxy^2/Sxx))/((nb-2)*Sxx))
-            ub0 <- sqrt(ub1^2 * sum(Mat[["xis"]]^2)/nb)
+            ub0 <- sqrt(ub1^2 * sum(Mat[[Versus]]^2)/nb)
         } else if (Regression == "Deming"){
             #tls::tls(yis ~ xis, data = Mat[, .(xis, yis)])
-            m2  <- MethComp::Deming(x = Mat[["xis"]], y = Mat[["yis"]], vr = Delta)
-            b0  <- m2[1]
+            m2  <- MethComp::Deming(x = Mat[[Versus]], y = Mat[["yis"]], vr = Delta)
+            b0  <- m2[1] 
             b1  <- m2[2]
         } else if (Regression == "OLS") {
             # b1 = Sxy/Sxx
             # b0 = mm - b1 * mo
-            # Syx = sqrt(sum((Mat[["yis"]] - (b0 + b1 * Mat[["xis"]]))^2)/(nrow(Mat)-2))
+            # Syx = sqrt(sum((Mat[["yis"]] - (b0 + b1 * Mat[[Versus]]))^2)/(nrow(Mat)-2))
             # ub = Syx/sqrt(Sxx)
-            # ua = Syx * sqrt(sum((Mat[["xis"]]^2)/(nrow(Mat) * Sxx)))
-            m2 <- lm(yis ~ xis, data = Mat)
-            b0  <- coef(m2)[1]
+            # ua = Syx * sqrt(sum((Mat[[Versus]]^2)/(nrow(Mat) * Sxx)))
+            Formula <- as.formula(paste0("yis ~ ", Versus))
+            m2 <- lm(Formula, data = Mat)
+            b0  <- coef(m2)[1] 
             b1  <- coef(m2)[2]
             st.errors <- sqrt(diag(vcov(m2)))
             ub0 <- st.errors[1]
             ub1 <- st.errors[2]}
-
+        
         # Regression statistics for Target Diagram (see delta tool user guide)
-        rmse  <- sqrt((sum((Mat[["yis"]] - (b0 + b1 * Mat[["xis"]]))^2))/(nb-2))
-        mbe   <- mean(Mat[["yis"]] - Mat[["xis"]])
-        mae   <- mean(abs(Mat[["yis"]] - Mat[["xis"]]))
-        CRMSE <- sqrt(mean(((Mat[["yis"]] - mm) - (Mat[["xis"]] - mo))^2))
-        NMSD  <- (sd(Mat[["yis"]]) - sd(Mat[["xis"]])) / sd(Mat[["xis"]])
-        Correlation <- cor(Mat[["xis"]],Mat[["yis"]])
+        rmse  <- sqrt((sum((Mat[["yis"]] - (b0 + b1 * Mat[[Versus]]))^2))/(nb-2))
+        mbe   <- mean(Mat[["yis"]] - Mat[[Versus]])
+        mae   <- mean(abs(Mat[["yis"]] - Mat[[Versus]]))
+        CRMSE <- sqrt(mean(((Mat[["yis"]] - mm) - (Mat[[Versus]] - mo))^2))
+        NMSD  <- (sd(Mat[["yis"]]) - sd(Mat[[Versus]])) / sd(Mat[[Versus]])
+        Correlation <- cor(Mat[[Versus]],Mat[["yis"]])
         # Squares of Residuals and bias (vector of values)
-        Mat[, fitted := (b0 + b1 * Mat[["xis"]])]
-        Mat[,   bias := (b0 + (b1 - 1) * Mat[["xis"]])] # Bias from identity line x
+        Mat[, fitted := (b0 + b1 * Mat[[Versus]])]
+        Mat[,   bias := (b0 + (b1 - 1) * Mat[[Versus]])] # Bias from identity line x
         Mat[, residuals := (Mat[["yis"]] - Mat[["fitted"]])]
         Mat[,     RS := (Mat[["yis"]] - Mat[["fitted"]])^2]
         # # creating an OLS model to apply Breusch Pagan test and to compute ub0 and ub1
-        OLS <- lm(yis ~ xis, data = Mat)
+        Formula <- as.formula(paste0("yis ~ ", Versus))
+        OLS <- lm(Formula, data = Mat)
         OLS$coefficients  <- c(b0,b1)
         OLS$residuals     <- Mat$residuals
         OLS$fitted.values <- Mat$fitted
@@ -133,31 +141,35 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
             # https://bookdown.org/ccolonescu/RPoE4/heteroskedasticity.html
             ub0 <- lmtest::coeftest(OLS, vcov. = car::hccm(OLS, type = "hc1"))[1, "Std. Error"]
             ub1 <- lmtest::coeftest(OLS, vcov. = car::hccm(OLS, type = "hc1"))[2, "Std. Error"]}
-
+        
         # testing for heteroscedacity with Breusch Pagan test
         # https://www.r-bloggers.com/2016/01/how-to-detect-heteroscedasticity-and-rectify-it/
         Breusch.Pagan     <- lmtest::bptest(formula = OLS)
         skedastic::breusch_pagan(OLS)
         # testing significance of correlation between s and square of absolute residuals - The calculation does not work only possibility the constrant RSS
         rtest <- Breusch.Pagan
-        #print(rtest, quote = FALSE)
-        # if fitting the square of residuals is needed
-        if (!is.na(rtest$p.value) && Fitted.RS && rtest$p.value < 0.05) {
-            futile.logger::flog.info("[U_orth_DF] Breusch-Pagan: null hypothesis means constant variance of residuals along x axis (homoscedacity). The hyposthesis is rejected if p-value < 0.05 (heterosccedacity)\n")
-            futile.logger::flog.info(paste0("[U_orth_DF] if Breusch-Pagan lagrange multiplier statistic p-value < 0.05, the null hypothesis (homoscedacity) is rejected, residuals are heteroscedastic with 0.95 level of statistical confidence. p-value =  ",
-                                            format(rtest$p.value, digits = 4)))
+        
+        # if fitting the residuals is needed, ordering before
+        futile.logger::flog.info("[U_orth_DF] Breusch-Pagan: null hypothesis means constant variance of residuals along x axis (homoscedacity). The hyposthesis is rejected if p-value < 0.05 (heteroscedacity)")
+        futile.logger::flog.info(paste0("[U_orth_DF] and the residuals would be heteroscedastic with 0.95 level of statistical confidence. Finally, p-value =  ", format(rtest$p.value, digits = 4)))
+        if (!is.na(rtest$p.value) && Fitted.RS && (rtest$p.value < 0.05 || Forced.Fitted.RS)) {
             futile.logger::flog.info("[U_orth_DF] The variance of residuals is not constant. RSS is calculated after applying a General Additive Model fitting.")
-            # Fitting with gam Vs "Xi"
-            if (is.null(Versus)) Versus <- "xis"
+            # Fitting with gam Vs Versus ("Xi")
             # if any y value is zero getting Warning: Error in eval: non-positive values not allowed for the 'gamma' family (we had 0.5 % of min(xis) to avoid this
-            #Formula <- as.formula(paste0("Mat$RS ~ s(Mat[[", Versus, "]])"))
-            #z <- gam(Formula, family=Gamma(link=log) )
-            z <- gam(sqrt(Mat$RS) ~ s(Mat$xis), family=Gamma(link=log) )
+            
+            Formula <- as.formula(paste0("sqrt(RS) ~ s(", Versus, ")"))
+            z <- mgcv::gam(Formula, data = Mat,family=Gamma(link=log) )
+            
+            # # see https://stats.stackexchange.com/questions/270124/how-to-choose-the-type-of-gam-parameters
+            # z <- mgcv::gam(Formula, data = Mat, method = "REML", select = TRUE)
+            
             Mat[, RS := fitted(z)^2]
             # Sum of squares of Residuals (one constant value)
             RSS     <- sum(Mat$RS)
-            if (Verbose) {plot(Mat[[Versus]], Mat$residuals^2, type = "p"); lines(Mat[order(Mat[[Versus]]),c(Versus, "RS"), with = F], col = "red", xlab = Versus); grid()}
+            
+            if (Verbose) print(summary(z))
         } else {
+            futile.logger::flog.info("[U_orth_DF] The variance of residuals is constant. Constant RSS is calculated.")
             if (Fitted.RS) {
                 futile.logger::flog.info(paste0("[U_orth_DF] Argument \"Fitted.RS\" in U_orth_DF(): ", Fitted.RS, ". If FALSE the square residuals are not fitted and constant RSS is computed."))
                 futile.logger::flog.info(paste0("[U_orth_DF] if Breusch-Pagan lagrange multiplier statistic p-value > 0.05, residuals are homoscedastic with 0.95 level of statistical confidence. p -value = ",
@@ -168,7 +180,23 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
             futile.logger::flog.info(paste0("[U_orth_DF] RSS is the square root of sum of squares of Residuals divided by n - 2 = ", format(sqrt(RSS/(nb-2)), digit = 3)))
             # No need to fit a line in this case
             Mat[, RS := rep(RSS/(nb-2), times = .N)]}
-
+        
+        # Plotting RS
+        if (Verbose) {
+            # See https://stackoverflow.com/questions/17093935/r-scatter-plot-symbol-color-represents-number-of-overlapping-points
+            
+            ## Use densCols() output to get density at each point
+            x <- grDevices::densCols(Mat[[Versus]],sqrt(Mat$residuals^2), colramp=colorRampPalette(c("black", "white")))
+            Mat$dens <- col2rgb(x)[1,] + 1L
+            ## Map densities to colors
+            cols <-  colorRampPalette(c("#000099", "#00FEFF", "#45FE4F", 
+                                                 "#FCFF00", "#FF9400", "#FF3100"))(256)
+                                                 
+            Mat$col <- cols[Mat$dens]
+            
+            plot(sqrt(Mat$residuals^2) ~ get(Versus), data = Mat, type = "p", col = col, xlab = Versus)
+            lines(Mat[[Versus]],sqrt(Mat[["RS"]]), col = "red", xlab = Versus); grid()}
+        
         # Checking if RSS^2 - Mat$ubsRM^2 < 0 that results in an error using sqrt(RSS^2 - Mat$ubsRM^2) of the rs.RSS. Replacing with 0
         neg.RSS <- which(Mat$RS - Mat[["ubsRM"]]^2 < 0)
         if (length(neg.RSS) > 0) {
@@ -179,38 +207,38 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
             # mat$RS are not changed and they are already calculated
             futile.logger::flog.info("[U_orth_DF] All \"RSS/(nb - 2) - ubsRM^2\" are positives. ubsRM makes sence.")}
         #### Calculating parameters for modified Target diagram Rel.bias and Rel.RSS
-        Mat[, Rel.bias := 2 * (b0/Mat[["xis"]] + (b1 - 1))]
+        Mat[, Rel.bias := 2 * (b0/Mat[[Versus]] + (b1 - 1))]
         # (Mat$RS - Mat$ubsRM^2) cannot be negative, adding or not ubss
         if (Add.ubss){
             if (length(neg.RSS) == 0) {
-                Mat[, Rel.RSS := 2 * sqrt(Mat$ubss^2 + Mat$RS - Mat$ubsRM^2) / Mat[["xis"]]]
+                Mat[, Rel.RSS := 2 * sqrt(Mat$ubss^2 + Mat$RS - Mat$ubsRM^2) / Mat[[Versus]]]
             } else {
                 Positives <- setdiff(1:nrow(Mat),neg.RSS)
-                if (length(Positives) > 0) Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,ubss]^2 + Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives,xis]]
+                if (length(Positives) > 0) Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,ubss]^2 + Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives][[Versus]]]
                 Mat[neg.RSS,  Rel.RSS := 0]}
         } else {
             if (length(neg.RSS) == 0) {
-                Mat[, Rel.RSS := 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat[["xis"]]]
+                Mat[, Rel.RSS := 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat[[Versus]]]
             } else {
                 Positives <- setdiff(1:nrow(Mat),neg.RSS)
-                if (length(Positives) > 0) Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives,xis]]
-                Mat[neg.RSS,  Rel.RSS := 0]}}
+                if (length(Positives) > 0) Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives][[Versus]]]
+                Mat[neg.RSS,  Rel.RSS := 0]}} 
         #### Calculating uncertainty
         Mat[, Ur := sqrt(Mat$Rel.bias^2 + Mat$Rel.RSS^2) * 100]
-        Mat[, U  := Mat$Ur / 100 * Mat[["xis"]]]
+        Mat[, U  := Mat$Ur / 100 * Mat[[Versus]]]
         # Indicators
         Mat[, Max.ubsRM := sqrt(RSS/(nb-2) + Mat$bias^2)]
-        Mat[, Max.RSD   := sqrt(RSS/(nb-2) + Mat$bias^2)/Mat[["xis"]]]
+        Mat[, Max.RSD   := sqrt(RSS/(nb-2) + Mat$bias^2)/Mat[[Versus]]]
         # Printing
         if (Verbose) {
             cat("--------------------------------\n")
             cat(sprintf("mean of x   : %.1g +/- %.1g",mo,sdo),"\n")
             cat(sprintf("Intercept b0: %.4g +/- %.4g",mm,sdm), "\n")
-            cat(sprintf("Slope b1    : %.4g +/- %.4g",b1,ub1),"\n")
-            cat(sprintf("Intercept b0: %.4g +/- %.4g",b0,ub0), "\n")
+            cat(sprintf("u of b1     : %.4g +/- %.4g",b1,ub1),"\n")
+            cat(sprintf("u of b0     : %.4g +/- %.4g",b0,ub0), "\n")
             cat(sprintf("R2: %.4g",Correlation^2), "\n")
-            if (Fitted.RS && rtest$p.value < 0.01) {
-                cat("The residuals are not constant. RSS are fitted with a general Additive model (k=5) see in returned matrix. \n")
+            if (!is.na(rtest$p.value) && Fitted.RS && (rtest$p.value < 0.05 || Forced.Fitted.RS)) {
+                cat("The residuals are not constant. RS are fitted with a general Additive model (k=5) see in returned matrix. \n")
             } else {
                 cat("The residuals are constant. RSS is calculated with equation for constant residuals:")
                 cat(sprintf("RSS: %.4g ",Mat$RSS[1]), "\n")}
@@ -224,20 +252,20 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
         cat("Mat is empty. Returning NAs.")
         calib <- list(mo = NA,sdo = NA, mm = NA,sdm = NA, b1 = NA, ub1 = NA, b0 = NA, ub0 = NA, RSS = NA,rmse = NA, mbe = NA, Correlation = NA, nb = NA, CRMSE = NA, NMSD = NA, Mat = NA, Regression = Regression)}
     names(calib) <- c("mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD", "Mat", "RS.Fitted", "Regression")
-    if (Verbose) print(data.frame(x              = Mat[["xis"]],
-                                  ubsRM          = Mat$ubsRM,
-                                  Max.ubsRM      = sqrt(RSS/(nb-2) + Mat$bias^2),
-                                  Max.RSD        = sqrt(RSS/(nb-2) + Mat$bias^2)/Mat[["xis"]],
-                                  Decrease.ubsRM = (Mat$ubsRM - sqrt(RSS/(nb-2) + Mat$bias^2)) > 0))
+    
+    # if (Verbose) print(data.frame(x              = Mat[[Versus]],
+    #                               ubsRM          = Mat$ubsRM,
+    #                               Max.ubsRM      = sqrt(RSS/(nb-2) + Mat$bias^2),
+    #                               Max.RSD        = sqrt(RSS/(nb-2) + Mat$bias^2)/Mat[[Versus]],
+    #                               Decrease.ubsRM = (Mat$ubsRM - sqrt(RSS/(nb-2) + Mat$bias^2)) > 0))
+    
     return(calib)
 }
 
 
-
-
 #' Get Critical Value, Information Threshold, Alert Threshold,
 #' Limit Value, Upper Assessment Threshold, Lower Assessment Threshold
-#' Data Quality Objectives from name of the molecule or Molecule. ---
+#' Data Quality Objectives from name of the molecule, Molecule or from sensor name. ---
 #'
 #' @param name.gas,name.sensor,gas.sensor character strings, default is NULL. One of them shall not be NULL, Molecule or pollutant symbol (CO, CO2, NO, NO2, O3, PM1, PM1, PM10, PM2.5),
 #'  brand name of sensor (CO_A4_P1, D300, NO_B4_P1, NO2_B43F_P1, OX_A431_P1, 5301CAT, 5301CST, OPCN3PM1, 5310CAT, 5310CST, OPCN3PM10, 5325CAT, 5325CST, OPCN3PM25) and
