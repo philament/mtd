@@ -3,7 +3,7 @@
 #================================================================CR
 ### U_orth_DF: Function Orthogonal regression without plotting (Vs 180505) ====
 #================================================================CR
-#' Function Orthogonal regression without plotting
+#' Function Orthogonal (or Deming or OLS) regression for computing measurement uncertainty without plotting
 #'
 #' @param Mat : Data.table or DataFrame of data including Case number, Date, x, y + optional ubsRM and/or ubss if ubsRM and/or ubss are not constant for all xi. The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names.
 #' @param ubsRM : numeric (default = NULL ), random standard uncertainty of reference measurements, xis, given as a constant value for all xis reference values.
@@ -489,16 +489,16 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 
 #' Plot a Modified Target Diagram ---
 #'
-#' @description
+#' @description 
 #' Base on script by Aaron Albin
 #' Use this script when the following is true:
 #' Inside Mat there are four sets of numeric data stored as three separate columns (xis, yis, Rel.bias, Rel.RSS).
-#' Slope and intercept of an OLS, Deming or orthognal regression fitted to Mat$yis vs Mat$yis are given.
+#' Slope and intercept of an OLS, Deming or orthognal regression fitted to Mat$yis vs Mat$yis are given. 
 #' xis, yis, Rel.bias, Rel.RSS, Slope and intercept are computed with function U_orth_DF().
 #' You wish to plot Rel.bias, Rel.RSS onto a 'scatterplot', where the horizontal axis corresponds to Rel.RSS and the vertical axis corresponds to Rel.bias.
 #' Each individual pair of numbers Rel.bias and Rel.RSS, then, is represented as a point in this two-dimensional space.
 #' @param Sensor_name name of the sensor to be written in front of the calibration equation. If NULL, do not print sensor name.
-#' @param Mat  Datatable or dataframe of data including Case number, Date, xis, yis, [ ubss and ubsRM if not constant], Rel.bias, Rel.RSS. Rel.bias, Rel.RSS, xis must be included into dataFrame Mat. It is easier to get it from function U.orth.List()
+#' @param Mat  Datatable or dataframe of data including Case number, Date, xis, yis, [ ubss and ubsRM if not constant], Rel.bias, Rel.RSS. Rel.bias, Rel.RSS, xis must be included into dataFrame Mat. It is easier to get it from function U.orth.df()
 #' @param ubsRM numeric (default = NULL ). Random standard uncertainty of the results of the reference method, xis, given as a constant value for all xis reference values
 #' @param ubss numeric (default = NULL ): Between standard uncertainty of the sensor, yis, given as a constant value for all yis sensor values
 #' @param b0, numeric, intercept of the orthogonal regression, default: NULL. If not NULL b0/xi is plotted
@@ -506,13 +506,13 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #' @param Unit.Ref Character, default is NULL. Unit of reference values, can "ppm", "ppb", "ug/m3", "mg/m3" ...
 #' @param Unit.sensor character vector, unit for the expanded uncertainty of yis and yis. Default is Unit.Ref.
 #' @param Xlabel,Ylabel label of the x and axis
-#' @param Xlim,Ylim limits of x and y axis, default values is NA, vectors of two values min and max values. Xlim and Ylim overruled Max.Percent
-#' @param Max.percent: numeric in percent, maximum extent of the x and y axis of the Target Diagram. This is reespected provided that Ur smaller than Max.percent exist.
+#' @param Xlim,Ylim limits of x and y axis, default values is NA, vectors of two values min and max values. Xlim and Ylim overruled Max.percent
+#' @param Max.percent: numeric in percent, maximum extent of the x and y axis of the Target Diagram. This is respected provided that Ur smaller than Max.percent exist. See DQO.3 is Max.percent is NULL.
 #' @param MainTitle character, title to appear On the top of the scatter plot of x And y values - NOT USED ANYMORE
-#' @param DQO.1,DQO.2,DQO.3 numeric, data quality objectives for Indicative measurements, Modelling and objective estimation. The DQOs are expressed in percentage. Defaul is NA, if NA no DQO target circle is plotted. Use function get DQO()
+#' @param DQO.1,DQO.2,DQO.3 numeric, data quality objectives for Indicative measurements, Modelling and objective estimation. Default is NA, if NA no DQO target circle is plotted. The DQOs are expressed as real values, not in percentage. Use function get.DQO. The xaxis is limited to 3 times DQO if Max.percent is NULL.
 #' @param LAT,UAT,LV,AT,CL numeric, lower and upper assessment threshold, limit value, Alert threshold and Critical level of the European Air Quality Directive for Mat$xis, same unit as Mat$xis, default value = NA, used for color scale and target circles
 #' @param Disk,WD,Dir Character vectors where you put the graphic files (Disk, working directory, directory), It is sufficient if only Dir is supplied
-#' @param variable.ubsRM logical (default = FALSE ), if FALSE ubsRM is used as constant random standard uncertainties for all xis reference values. If TRUE ubsRM given in Mat and is used for each reference values
+#' @param variable.ubsRM logical (default = FALSE ). If FALSE ubsRM is used as constant random standard uncertainties for all xis reference values. If TRUE ubsRM given in Mat and is used for each reference values
 #' @param f_coef1,f_coef2,f_R2 numeric, number of digit for intercept, slope and R2 using sprintf syntax. f_coef1 is used both for intercept and s(Res), f_coef2 is used for all parameters of the model apart from the intercept
 #' @param nameModel character, name of model to be used to save uncertainty plots, character, default NULL
 #' @param sdm_sdo logical, default is NULL. It shall be TRUE if the standard deviation of yis is lower than the one of xi and conversely.
@@ -521,9 +521,10 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #' @param Model.used character, default is NULL. Name of calibration model used to compute yis. Only used if MainTitle is null.
 #' @param BeginEnd character vector representing the starting and ending date, default is null. Only used if MainTitle is null.
 #' @param Time.average: numeric, default is null. Tme average in minutes. . Only used if MainTitle is null.
-#' @param with.ubss: logical, default is TRUE. If FALSE, ubss is subtracted to Rel.RSS. In this case Rel.RSS = 2 * (sqrt((Mat$RS - ubsRM^2) / Mat$xis).
+#' @param with.ubss: logical, default is TRUE. If FALSE, ubss is subtracted to Rel.RSS. In this case Rel.RSS = 2 * (sqrt((Mat$RS - ubsRM^2) / Mat$xis). 
 #'                   If TRUE Rel.RSS is 2 * (sqrt(ubss^2 + Mat$RS - ubsRM^2)/ Mat$xis)
 #' @param Ref_Analysers name of reference analyser, default is NULL. If not null the name is added in Target_diagram
+#' @param Show.Diag.Ur logical, default is TRUE. If TRUE a diagonal is printed between the origin and farest point, indicating relative expanded measurement uncertainty. A that the point the contribution of Bias and Relative Error is also plotted.
 #' @return Plot a Target diagram that is saved as pdf file provided that SavePlot is TRUE and unless error message is returned.
 #'
 #' @import data.table
@@ -544,20 +545,20 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
                            DQO.1 = NA, DQO.2 = NA, DQO.3 = NA, CL = NA, IT = NA, AT = NA, LV = NA, LAT = NA, UAT = NA,
                            Disk = NA, WD = NA, Dir = NA, sdm_sdo = NULL, SavePlot = TRUE,
                            Model.used = NULL, BeginEnd = NULL, Time.average = NULL, Max.percent = NULL, with.ubss = TRUE, Ref_Analysers = NULL,
-                           Regression = "OLS", Fitted.RS  = FALSE, variable.ubsRM = FALSE) {
+                           Regression = "OLS", Fitted.RS  = FALSE, variable.ubsRM = FALSE, Show.Diag.Ur = TRUE) {
     #=====[Consistency checks]=====
     # Ordering Mat according to xis to be able to create a color pallete e
     Mat <- Mat[order(Mat$xis),]
     #checking that Mat is dataFrame
-    if (!is.data.frame(Mat) || !data.table::is.data.table(Mat)) return(futile.logger::flog.error("[Target.Diagram] Mat is not a data.table or dataFrame."))
+    if (!is.data.frame(Mat) || !is.data.table(Mat)) return(futile.logger::flog.error("[Target.Diagram] Mat is not a data.table or dataFrame.")) 
     # convert to data.table if needed
-    if (!data.table::is.data.table(Mat)) Mat <- data.table::data.table(Mat, key = "date")
+    if (!is.data.table(Mat)) Mat <- data.table(Mat, key = "date")
     #checking that the mat dataFrame is not empty, considering only the complete cases with Xis and yis > 0
     Mat <- Mat[complete.cases(Mat) & xis > 0 & yis > 0,]
     if (!nrow(Mat) > 0) return(futile.logger::flog.error("[Target.Diagram] Mat is empty or not complete. Returning NAs.\n"))
     # checking if Mat includes "Rel.bias", "Rel.RSS", "xis"
     if (!all(c("Rel.bias", "Rel.RSS", "xis") %in% colnames(Mat)) || any(is.null(c("b0","b1")))) {
-        return(futile.logger::flog.error("[Target.Diagram] Mat does not contain Rel.bias, Rel.RSS or xis or b0 and/or b1 are null.\n"))}
+        return(futile.logger::flog.error("[Target.Diagram] Mat does not contain Rel.bias, Rel.RSS or xis or b0 and/or b1 are null.\n"))} 
     # plotting the Target Diagram
     # Create X-Y scatterplot: Coded by color by Aaron Albin
     #=====[Set XData, YData, b0 and b1 variables]=====
@@ -568,14 +569,14 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
         Sign.RS <- Mat$RS - Mat$ubsRM^2
         Negative.RS <- which(Sign.RS < 0)
         if (length(Negative.RS) > 0) {
-            set(Mat, i = Negative.RS, j = "Rel.RSS", value = rep(0, times = length(Negative.RS)))
+            data.table::set(Mat, i = Negative.RS, j = "Rel.RSS", value = rep(0, times = length(Negative.RS)))
             Positive.RS <- setdiff(seq(Sign.RS), Negative.RS)
-            if (length(Positive.RS) > 0) set(Mat, i = Positive.RS, j = "Rel.RSS", value = 2 * sqrt(Mat$RS[Positive.RS] - Mat$ubsRM[Positive.RS]^2) / Mat$xis[Positive.RS])
-        } else set(Mat, j = "Rel.RSS", value = 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat$xis)}
+            if (length(Positive.RS) > 0) data.table::set(Mat, i = Positive.RS, j = "Rel.RSS", value = 2 * sqrt(Mat$RS[Positive.RS] - Mat$ubsRM[Positive.RS]^2) / Mat$xis[Positive.RS])
+        } else data.table::set(Mat, j = "Rel.RSS", value = 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat$xis)}
     Mat[, XData :=  Rel.RSS * 100]
     Mat[, YData :=  Rel.bias * 100]
     # re-computing Ur in case RSS was changed
-    set(Mat, j = "Ur", value = sqrt(Mat$XData^2 + Mat$YData^2))
+    data.table::set(Mat, j = "Ur", value = sqrt(Mat$XData^2 + Mat$YData^2))
     # For the decomposition of Rel.Bias
     # Contribution of b0 to Rel.Bias
     Mat[, b0 := 2 * b0 / xis * 100]
@@ -714,7 +715,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
     #=====[GridlineColor]=====
     # Choose the color for your grid lines. See step 12 for help.
     GridlineColor = "lightgrey"
-    #=====[GridlineWidthModifier]=====
+        #=====[GridlineWidthModifier]=====
     # If you would like your gridlines to be thicker, the following lets you increase its width.
     # '1' represents 100% of the default thickness, so for example, you could type 2 to make it 200% that thickness.
     GridlineWidthModifier = 1
@@ -724,7 +725,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
     par(mar = c(2.6, 2.6, 2.5, 3.5),  # mar=c(margin below, lines at left, lines at top, lines at right)
         mgp = c(1.35, 0.0, 0),         # mgp=c(label, tick mar label, tick mark)
         cex.axis = 0.8)
-
+    
     on.exit(par(op))
     plot.default(x           = Mat$XData[Index.Good], y    = Mat$YData[Index.Good],
                  xlim        = Xlim                 , ylim = Ylim,
@@ -754,7 +755,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
     if (abs(Ylim[2]) > abs(Ylim[1])) label.Bias <-  "Bias > 0" else label.Bias <-  "Bias < 0"
     #=====[Text highest standard deviation and bias]=====
     # see https://stackoverflow.com/questions/4973898/combining-paste-and-expression-functions-in-plot-labels
-    text(x      = if (sdm_sdo) usr[1]/2 else usr[2]/2,
+    text(x      = if (sdm_sdo) usr[1]/2 else usr[2]/2, 
          y      = if (abs(Ylim[2]) > abs(Ylim[1])) usr[4] else usr[3],
          pos    = if (abs(Ylim[2]) > abs(Ylim[1])) 1 else 3,
          labels = bquote(sigma[Sensor] ~ .(label.sigma) ~ sigma[Reference] ~ " and " ~ .(label.Bias)), cex = 0.8)
@@ -766,15 +767,15 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
     # Formatting Decimal places in R: https://stackoverflow.com/questions/3443687/formatting-decimal-places-in-r
     if (variable.ubsRM) {
         Text <- substitute(paste(Text.Dates,", Y"["i"]," = b"[0]," + b"[1]," X"["i"],", with b"[0]," = ", b0.Digits, " and b"[1]," = ", b1.Digits, " (", Type.Regression,")",
-                                 Ref_Analysers),
+                                 Ref_Analysers), 
                            list(Text.Dates = Text.Dates, b0.Digits = format(round(b0,2), digits = 2), b1.Digits = format(round(b1, digits = 2), nsmall = 2), Type.Regression = Regression, Ref_Analysers = Ref_Analysers))
     } else {
         Text <- substitute(paste(Text.Dates,", Y"["i"]," = b"[0]," + b"[1]," X"["i"],", with b"[0]," = ", b0.Digits, " and b"[1]," = ", b1.Digits, " (", Type.Regression,")",
-                                 ", u"[bs_RM]," = ", ubs_RM.Digits, " ", Unit.Ref, Ref_Analysers),
-                           list(Text.Dates = Text.Dates, b0.Digits = format(round(b0,2), digits = 2), b1.Digits = format(round(b1, digits = 2), nsmall = 2), Type.Regression = Regression,ubs_RM.Digits = format(round(ubsRM, 2), digits = 2),
+                                 ", u"[bs_RM]," = ", ubs_RM.Digits, " ", Unit.Ref, Ref_Analysers), 
+                           list(Text.Dates = Text.Dates, b0.Digits = format(round(b0,2), digits = 2), b1.Digits = format(round(b1, digits = 2), nsmall = 2), Type.Regression = Regression,ubs_RM.Digits = format(round(ubsRM, 2), digits = 2), 
                                 Unit.Ref = Unit.Ref, Ref_Analysers = Ref_Analysers))
     }
-    if (with.ubss) Text <- paste0(Text, substitute(paste(" and u"[bs_s]," = ", ubss.Digits, " ", Unit.sensor), list(ubss.Digits = format(round(ubss,2), digits = 2), Unit.sensor = Unit.sensor)))
+    if (with.ubss) Text <- substitute(paste(Text," and u"[bs_s]," = ", ubss.Digits, " ", Unit.sensor), list(Text = Text,ubss.Digits = format(round(ubss,2), digits = 2), Unit.sensor = Unit.sensor))
     if (Unit.Ref == "ppm" || Unit.Ref == "mg/m3") {
         mtext(text = Text, side = 3, line = 0.1, cex  = 0.65)
     } else {
@@ -794,7 +795,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
     abline(v = 0)
     #=====[colorscale]=====
     # Add colorscale
-    testcol<-plotrix::color.gradient(c(0,1,1),c(1,1,0),0,nslices=100)
+    testcol <- plotrix::color.gradient(c(0,1,1),c(1,1,0),0,nslices=100)
     plotrix::color.legend(usr[2] + 0.005 *(usr[2]-usr[1]), usr[3], usr[2] + 0.03 *(usr[2]-usr[1]),usr[4] - 0.05 * (usr[4]-usr[3]),
                           factor.Color,testcol, cex=0.6, align="rb",gradient="y")
     LegendTitle <- substitute(paste("X"[i], ", ", Unit,sep=""),list(Unit=Unit.Ref))
@@ -811,7 +812,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
         z <- outer(x, y, UR)
         Steps <- seq(from = DQO.1 * 100, to = Dist.Quadrants, by = DQO.step)
         Steps <- Steps[-which(as.character(Steps) %in% as.character(c(DQO.1 * 100 , DQO.2  * 100, DQO.3  * 100)))]
-
+        
         # Plotting intermediary levels
         if (length(Steps) > 0) {
             contour(x = x, y = y, z = z, col = "grey", add = TRUE, method = "edge", levels = Steps,
@@ -826,7 +827,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
             #          pos = ifelse(sdm_sdo,2,4),
             #          cex = 0.8)}
         }
-
+        
         # Plotting DQOs
         contour(x = x, y = y, z = z, col = "black", add = TRUE, method = "edge", levels = c(DQO.1*100, DQO.2*100, DQO.3*100),
                 vfont = NULL, axes = axes, frame.plot = axes, lty = 'solid', lwd  = 2, labcex = 0.8)
@@ -851,29 +852,31 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
     } else Index.med.UR <- which(Mat[["Angle_45"]] == min(Mat[["Angle_45"]][Index.Good][Index.Big.Ur]))[1]
     # Index.med.UR based on biggest visible uncertainty
     Index.med.UR <- which(Mat$Ur == Mat$Ur[Index.Good][which.max(Mat[Index.Good][["Ur"]])])[1]
+    
     # plotting Arrows and text Rel.Bias, rel.Rc, Ur
-    shape::Arrows(x0 = Mat$XData[Index.med.UR], y0 = 0,
-                  x1 = Mat$XData[Index.med.UR], y1 = Mat$YData[Index.med.UR],
-                  col = "black",
-                  lty = 1, lwd = 1,
-                  arr.type = "curved", arr.length = 0.1, code = 3, arr.adj = 1)
-    text(x = Mat$XData[Index.med.UR], y = Mat$YData[Index.med.UR]/2,
-         labels = c("Bias in %"), pos = 4, srt = 90, cex = 0.8)
-    shape::Arrows(x0 = 0                  , y0 = Mat$YData[Index.med.UR],
-                  x1 = Mat$XData[Index.med.UR], y1 = Mat$YData[Index.med.UR],
-                  col = "black", lty = 1, lwd = 1, arr.type = "curved", arr.length = 0.1,
-                  code = 3, arr.adj = 1)
-    text(x = Mat$XData[Index.med.UR]/2, y = Mat$YData[Index.med.UR],
-         labels = c("Random effect"), pos = 3, adj = 0.5, cex = 0.8)
-    shape::Arrows(x0 = 0                  , y0 = 0,
-                  x1 = Mat$XData[Index.med.UR], y1 = Mat$YData[Index.med.UR],
-                  col = "black", lwd = 2, arr.type = "curved", arr.length = 0.15, code = 3, arr.adj = 1)
-    Srt <- atan(Mat$YData[Index.med.UR]/Mat$XData[Index.med.UR]) * 180 /pi
-    if (sdm_sdo) {
-        if (Srt >= 0) Srt <- - Srt else Srt <- - Srt}
-    text(x = Mat$XData[Index.med.UR]/2, y = Mat$YData[Index.med.UR]/2,
-         labels = c("Relative expanded uncertainty in %"),
-         srt = Srt, pos = 3)
+    if(Show.Diag.Ur){
+        shape::Arrows(x0 = Mat$XData[Index.med.UR], y0 = 0,
+                      x1 = Mat$XData[Index.med.UR], y1 = Mat$YData[Index.med.UR],
+                      col = "black",
+                      lty = 1, lwd = 1,
+                      arr.type = "curved", arr.length = 0.1, code = 3, arr.adj = 1)
+        text(x = Mat$XData[Index.med.UR], y = Mat$YData[Index.med.UR]/2,
+             labels = c("Bias in %"), pos = 4, srt = 90, cex = 0.8)
+        shape::Arrows(x0 = 0                  , y0 = Mat$YData[Index.med.UR],
+                      x1 = Mat$XData[Index.med.UR], y1 = Mat$YData[Index.med.UR],
+                      col = "black", lty = 1, lwd = 1, arr.type = "curved", arr.length = 0.1,
+                      code = 3, arr.adj = 1)
+        text(x = Mat$XData[Index.med.UR]/2, y = Mat$YData[Index.med.UR],
+             labels = c("Random effect"), pos = 3, adj = 0.5, cex = 0.8)
+        shape::Arrows(x0 = 0                  , y0 = 0,
+                      x1 = Mat$XData[Index.med.UR], y1 = Mat$YData[Index.med.UR],
+                      col = "black", lwd = 2, arr.type = "curved", arr.length = 0.15, code = 3, arr.adj = 1)
+        Srt <- atan(Mat$YData[Index.med.UR]/Mat$XData[Index.med.UR]) * 180 /pi
+        if (sdm_sdo) {
+            if (Srt >= 0) Srt <- - Srt else Srt <- - Srt}
+        text(x = Mat$XData[Index.med.UR]/2, y = Mat$YData[Index.med.UR]/2,
+             labels = c("Relative expanded uncertainty in %"),
+             srt = Srt, pos = 3)}
     #=====[Text and line b1 - 1]=====
     text(x = Mat$b1[1]/2,
          y = ifelse(label.Bias ==  "Bias > 0",max(Mat$YData[Index.Good]),min(Mat$YData[Index.Good])),
@@ -942,10 +945,10 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
                      labels = Limit,
                      pos = 1)}
             if (!exists("Name.Limits2plots")) {
-                Name.Limits2plots <- paste0(Limit, " = ", round(Limits2plots[Limit], digits = 1))
+                Name.Limits2plots <- paste0(Limit, " = ", round(Limits2plots[Limit], digits = 1)) 
             } else Name.Limits2plots <- paste0(Name.Limits2plots, ", ",paste0(Limit, " = ", round(Limits2plots[Limit], digits = 1)))}}
     Blank.space <- 0.01 * (usr[3] - usr[4])
-    if (exists("Name.Limits2plots") && length(Name.Limits2plots) > 0 ) text(x      = if (sdm_sdo) (usr[1] + usr[2])/2 else (usr[2] + usr[1])/2,
+    if (exists("Name.Limits2plots") && length(Name.Limits2plots) > 0 ) text(x      = if (sdm_sdo) (usr[1] + usr[2])/2 else (usr[2] + usr[1])/2, 
                                                                             y      = if (abs(Ylim[2]) > abs(Ylim[1])) usr[3]-Blank.space else usr[4]+Blank.space,
                                                                             adj    = c(0.5, ifelse(abs(Ylim[2]) > abs(Ylim[1]), 0, 1)),
                                                                             #pos    = ifelse(abs(Ylim[2]) > abs(Ylim[1]), 3, 1),
