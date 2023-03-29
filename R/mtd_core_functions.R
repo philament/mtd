@@ -6,27 +6,28 @@
 #' Function Orthogonal (or Deming or OLS) regression for computing measurement uncertainty without plotting
 #'
 #' @param Mat : Data.table or DataFrame of data including Case number, Date, x, y + optional ubsRM and/or ubss if ubsRM and/or ubss are not constant for all xi.
-#' The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names. #' The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names.
-#'  xis cannot be 0, otherwise the function crashes due to Ur divided by 0.
+#' The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names.
+#' xis cannot be 0, otherwise the function crashes due to Ur divided by 0.
 #' @param ubsRM : numeric (default = NULL ), random standard uncertainty of reference measurements, xis, given as a constant value for all xis reference values.
 #' @param variable.ubsRM : logical, default is FALSE. If FALSE, ubsRM is used as constant random standard uncertainties for all xis reference values. If TRUE ubsRM given in Mat and is used for each reference value
 #' @param perc.ubsRM : numeric default value 0.03. Use to compute ubsRm in case variable.ubsRM is TRUE as Mat$ubsRM = perc.ubsRM * Mat[["xis"]] 
 #' @param ubss : numeric (default = NULL ), random standard uncertainty of sensor measurements, yis, given as a constant value for all yis sensor values
 #' @param variable.ubss : logical, default is FALSE. If FALSE, ubss is used as constant random standard uncertainties for all yis sensor values. If TRUE ubss given in Mat and is used for each sensor value
 #' @param perc.ubss : numeric default value 0.03. Use to compute ubss in case variable.ubss is TRUE as Mat$ubss = perc.ubss * Mat[["yis"]] 
-#' @param Fitted.RS : logical, default is FALSE. If TRUE the square residuals (RS) can be fitted using a General Additive Model, according to the result of provided that the probability that the correlation between xis and RS is null is lower than 0.01, (p < 0.01)
+#' @param Fitted.RS Optional, logical, default is FALSE. If TRUE the square residuals (RSi) are fitted using a General Additive Model, provided that the null hypothesis of no correlation between xis and RS is rejected when the probability is lower than 0.05, (p < 0.05)
 #' @param Forced.Fitted.RS : logical, default is FALSE. If TRUE even if the variance of residuals is constant, RS is Gam fitted.
 #' @param Regression character, default is "Orthogonal", possible values are "OLS" ,"Deming" and "Orthogonal". For Orthogonal Delta  is 1 and for "Deming" Delta is ubss^2/ubsRM^2. See https://en.wikipedia.org/wiki/Deming_regression
 #' @param Add.ubss : logical, default is TRUE If TRUE ubss is added to  Mat$Rel.RSS. If FALSE ubss is not added to  Mat$Rel.RSS.
 #' @param Verbose : logical, default is FALSE. If TRUE messages are displayed during execution.
 #' @param Versus character, default is NUL. If not NULL name of the column in data.table Mat which is used with the gam fitting to fit RSi. If NULL, RSi will befitted versus reference data (xis). 
 
-#' @return a list with parameters: "mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD" and a data.table called "Mat" with columns: "case", "Date", "xis", "yis","ubsRM", "RS", "Ur", "U", "Rel.bias", "Rel.RSS"
+#' @return a list with parameters: "mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD", "RS.Fitted", "Regression", "Add.ubss" and a data.table called "Mat" with columns: "case", "Date", "xis", "yis","ubsRM", "RS", "Ur", "U", "Rel.bias", "Rel.RSS"
 #' @details: Homogeneity of variance of residuals is tested For the calculation of RSi adding Ur In a new column of Mat
 #' returning a list with slope (b and ub), intercept (a and ua), the sum of square of residuals (RSS),
-#' the root means square of error (RMSE), the mean bias error (mbe), the coefficeint of correlation (Correlation),
-#' the number of valid measurements (nb), the centered root mean square of error (CRMSE), the normalised mean standard deviation (NMSD) and Mat with relative expanded uncertainty.
-#' Negative Mat$RS - Mat$ubsRM^2) are set to 0
+#' the root means square of error (RMSE), the mean bias error (mbe), the coefficient of correlation (Correlation),
+#' the number of valid measurements (nb), the centered root mean square of error (CRMSE), the normalised mean standard deviation (NMSD) and Mat with (relative) expanded measurement uncertainty.
+#' The list also lists the parameters of computation: "RS.Fitted", "Regression" and "Add.ubss".
+#' Negative Rel.RSS are set to 0.
 
 #' @import data.table
 #' @import car
@@ -233,9 +234,11 @@ U_orth_DF <- function(Mat, variable.ubsRM = FALSE, ubsRM = NULL, perc.ubsRM = 0.
         #### Calculating uncertainty
         Mat[, Ur := sqrt(Mat$Rel.bias^2 + Mat$Rel.RSS^2) * 100]
         Mat[, U  := Mat$Ur / 100 * Mat[[Versus]]]
+        
         # Indicators for ubsRM
         Mat[, Max.ubsRM := sqrt((Mat$Rel.RSS * Mat[[Versus]] / 2)^2 + Mat$ubsRM^2 + Mat$bias^2)]
         Mat[, Max.RSD   := Max.ubsRM / Mat[[Versus]]]
+        
         # Printing
         if (Verbose) {
             cat("--------------------------------\n")
@@ -524,11 +527,14 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #'  . the contributions of b0 and b1 are located on the same side of the y-axis with the combinations of b0 negative and b1 < 1, or, b0 positive and b1 > 1;
 #'  . the contributions of b0 and b1 are located on different sides of the y-axis but one of these contributions is overwhelming with the b0 effect being higher than the b1 effect.
 #'  
-#' @param sensor_name Optional, character string, default is NULL. Name of the sensor to be written in front of the calibration equation. If NULL (default), do not print sensor name.
+#' @param Sensor_name Optional, character string, default is NULL. Name of the sensor to be written in front of the calibration equation. If NULL (default), do not print sensor name.
 #' @param Mat  data.table or dataframe of data including Case number, Date, xis, yis, [ubss and ubsRM if not constant], Rel.bias, Rel.RSS. Rel.bias, Rel.RSS and xis shall be included into dataFrame Mat.
-#' It is easier to get it from function U_orth_DF()
+#' It is easier to get this data.table from function U_orth_DF()
 #' @param variable.ubsRM logical, default is FALSE. If FALSE ubsRM is a constant random standard uncertainties and if TRUE ubsRM is different for each reference data. ubsRM is printed on the plot only if variable.ubsRM is FALSE.
-#' @param ubsRM numeric, default is NULL, Random standard uncertainty of the results of the reference method, xis, given as a constant value for all xis reference values
+#' @param ubsRM numeric, default is NULL. Random between standard uncertainty of the reference data, xis, given as a constant value for all xis reference values. Only required if variable.ubsRM is FALSE.
+#' @param with.ubss: logical, default is TRUE. If FALSE, Rel.RSS is computed without adding ubss. In this case Rel.RSS = 2 * (sqrt((Mat$RS - ubsRM^2) / Mat$xis). 
+#'                   This useful if Mat is generated adding ubss while user wants to plot the Modified Target Diagram without ubss.
+#'                   If TRUE Rel.RSS should be 2 * (sqrt(ubss^2 + Mat$RS - ubsRM^2)/ Mat$xis) but it is only possible to compute Rel.RSS if Mat includes a column ubss. This is generally not the case and Mat shalle be regernrated using function U_orth_DF()..
 #' @param variable.ubss logical, default is FALSE. If FALSE ubss is a constant random standard uncertainties and if TRUE ubss is different for each reference data. ubss is printed on the plot only if variable.ubss is FALSE.
 #' @param ubss numeric, default is NULL, Between standard uncertainty of the sensor, yis, given as a constant value for all yis sensor values
 #' @param b0, numeric, intercept of the orthogonal regression, default: NULL. If not NULL b0/xi is plotted
@@ -536,7 +542,7 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #' @param Unit.Ref Character, default is NULL. Unit of reference values, can "ppm", "ppb", "ug/m3", "mg/m3" ...
 #' @param Unit.sensor character vector, unit for the expanded uncertainty of yis and yis. Default is Unit.Ref.
 #' @param Xlabel,Ylabel label of the x and axis
-#' @param Xlim,Ylim limits of x and y axis, default values is NA, vectors of two values min and max values. Xlim and Ylim overruled Max.percent
+#' @param Xlim,Ylim limits of x and y axis, default values is NA, vectors of two values min and max values. Xlim and Ylim is superseeded by Max.percent. Avoid using them.
 #' @param Max.percent Optional, numeric in percent, default is NULL. Maximum extent of the x and y axis of the Target Diagram. This is respected provided that there exists Ur smaller than Max.percent. If NULL, DQO.3 is Max.percent.
 #' @param MainTitle character, title to appear On the top of the Modified Target Diagram
 #' @param DQO.1,DQO.2,DQO.3 numeric, data quality objectives for Indicative measurements, Modelling and objective estimation. Default is NA, if NA no DQO target circle is plotted. The DQOs are expressed as real values, not in percentage. Use function get.DQO. The xaxis is limited to 3 times DQO if Max.percent is NULL.
@@ -548,8 +554,6 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #' @param Model.used character string, default is NULL. Name of calibration model used to compute yis. Only used if MainTitle is null.
 #' @param BeginEnd character vector representing the starting and ending date, default is null. Only used if MainTitle is null.
 #' @param Time.average: numeric, default is null. Tme average in minutes. . Only used if MainTitle is null.
-#' @param with.ubss: logical, default is TRUE. If FALSE, Rel.RSS is computed without adding ubss. In this case Rel.RSS = 2 * (sqrt((Mat$RS - ubsRM^2) / Mat$xis). It could be that Mat was generated adding ubss while user wants to plot the Modified Target Diagram without ubss.
-#'                   If TRUE Rel.RSS should be 2 * (sqrt(ubss^2 + Mat$RS - ubsRM^2)/ Mat$xis) but it is only possible to compute if Mat includes a column ubss. THis is generally not the case and Mat shalle be regernrated using function U_orth_DF()..
 #' @param Ref_Analysers name of reference analyser, default is NULL. If not null the name is added in Target_diagram
 #' @param Show.Diag.Ur logical, default is TRUE. If TRUE a diagonal is printed between the origin and farest point, indicating relative expanded measurement uncertainty. A that the point the contribution of Bias and Relative Error is also plotted.
 #' @return Plot a Target diagram unless error unless an error message is returned.
@@ -567,8 +571,8 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #'
 #' @noRd
 #'
-Target.Diagram <- function(Sensor_name, Mat, variable.ubsRM = FALSE, ubsRM = NULL, with.ubss = TRUE, variable.ubss = FALSE, ubss = NULL, b0 = NULL, b1 = NULL, Unit.Ref = NULL, Unit.sensor = Unit.Ref,
-                           xAxisLabel = NULL, yAxisLabel = NULL, Xlim = NA, Ylim = NA, MainTitle = NULL,
+Target.Diagram <- function(Sensor_name, Mat, variable.ubsRM = FALSE, ubsRM = NULL, with.ubss = TRUE, variable.ubss = FALSE, ubss = NULL, b0 = NULL, b1 = NULL,
+                           Unit.Ref = NULL, Unit.sensor = Unit.Ref, xAxisLabel = NULL, yAxisLabel = NULL, Xlim = NA, Ylim = NA, MainTitle = NULL,
                            DQO.1 = NA, DQO.2 = NA, DQO.3 = NA, CL = NA, IT = NA, AT = NA, LV = NA, LAT = NA, UAT = NA,
                            sdm_sdo = NULL, Model.used = NULL, BeginEnd = NULL, Time.average = NULL, Max.percent = NULL, Ref_Analysers = NULL,
                            Regression = "OLS", Fitted.RS  = FALSE, Show.Diag.Ur = TRUE) {
