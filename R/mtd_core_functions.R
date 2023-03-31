@@ -5,26 +5,29 @@
 #================================================================CR
 #' Function Orthogonal (or Deming or OLS) regression for computing measurement uncertainty without plotting
 #'
-#' @param Mat : Data.table or DataFrame of data including Case number, Date, x, y + optional ubsRM and/or ubss if ubsRM and/or ubss are not constant for all xi. The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names.
+#' @param Mat : Data.table or DataFrame of data including Case number, Date, x, y + optional ubsRM and/or ubss if ubsRM and/or ubss are not constant for all xi.
+#' The columns shall be in the order: "case", "Date", "xis", "yis","ubsRM", "ubss" with whatever column names.
+#' xis cannot be 0, otherwise the function crashes due to Ur divided by 0.
 #' @param ubsRM : numeric (default = NULL ), random standard uncertainty of reference measurements, xis, given as a constant value for all xis reference values.
 #' @param variable.ubsRM : logical, default is FALSE. If FALSE, ubsRM is used as constant random standard uncertainties for all xis reference values. If TRUE ubsRM given in Mat and is used for each reference value
 #' @param perc.ubsRM : numeric default value 0.03. Use to compute ubsRm in case variable.ubsRM is TRUE as Mat$ubsRM = perc.ubsRM * Mat[["xis"]] 
 #' @param ubss : numeric (default = NULL ), random standard uncertainty of sensor measurements, yis, given as a constant value for all yis sensor values
 #' @param variable.ubss : logical, default is FALSE. If FALSE, ubss is used as constant random standard uncertainties for all yis sensor values. If TRUE ubss given in Mat and is used for each sensor value
 #' @param perc.ubss : numeric default value 0.03. Use to compute ubss in case variable.ubss is TRUE as Mat$ubss = perc.ubss * Mat[["yis"]] 
-#' @param Fitted.RS : logical, default is FALSE. If TRUE the square residuals (RS) can be fitted using a General Additive Model, according to the result of provided that the probability that the correlation between xis and RS is null is lower than 0.01, (p < 0.01)
+#' @param Fitted.RS Optional, logical, default is FALSE. If TRUE the square residuals (RSi) are fitted using a General Additive Model, provided that the null hypothesis of no correlation between xis and RS is rejected when the probability is lower than 0.05, (p < 0.05)
 #' @param Forced.Fitted.RS : logical, default is FALSE. If TRUE even if the variance of residuals is constant, RS is Gam fitted.
 #' @param Regression character, default is "Orthogonal", possible values are "OLS" ,"Deming" and "Orthogonal". For Orthogonal Delta  is 1 and for "Deming" Delta is ubss^2/ubsRM^2. See https://en.wikipedia.org/wiki/Deming_regression
 #' @param Add.ubss : logical, default is TRUE If TRUE ubss is added to  Mat$Rel.RSS. If FALSE ubss is not added to  Mat$Rel.RSS.
 #' @param Verbose : logical, default is FALSE. If TRUE messages are displayed during execution.
 #' @param Versus character, default is NUL. If not NULL name of the column in data.table Mat which is used with the gam fitting to fit RSi. If NULL, RSi will befitted versus reference data (xis). 
 
-#' @return a list with parameters: "mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD" and a data.table called "Mat" with columns: "case", "Date", "xis", "yis","ubsRM", "RS", "Ur", "U", "Rel.bias", "Rel.RSS"
+#' @return a list with parameters: "mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD", "RS.Fitted", "Regression", "Add.ubss" and a data.table called "Mat" with columns: "case", "Date", "xis", "yis","ubsRM", "RS", "Ur", "U", "Rel.bias", "Rel.RSS"
 #' @details: Homogeneity of variance of residuals is tested For the calculation of RSi adding Ur In a new column of Mat
 #' returning a list with slope (b and ub), intercept (a and ua), the sum of square of residuals (RSS),
-#' the root means square of error (RMSE), the mean bias error (mbe), the coefficeint of correlation (Correlation),
-#' the number of valid measurements (nb), the centered root mean square of error (CRMSE), the normalised mean standard deviation (NMSD) and Mat with relative expanded uncertainty.
-#' Negative Mat$RS - Mat$ubsRM^2) are set to 0
+#' the root means square of error (RMSE), the mean bias error (mbe), the coefficient of correlation (Correlation),
+#' the number of valid measurements (nb), the centered root mean square of error (CRMSE), the normalised mean standard deviation (NMSD) and Mat with (relative) expanded measurement uncertainty.
+#' The list also lists the parameters of computation: "RS.Fitted", "Regression" and "Add.ubss".
+#' Negative Rel.RSS are set to 0.
 
 #' @import data.table
 #' @import car
@@ -39,35 +42,41 @@
 #'
 #' @noRd
 #'
-U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.03, ubss = NULL, variable.ubss = FALSE, perc.ubss = 0.03, Fitted.RS = FALSE, Forced.Fitted.RS = FALSE, Regression = "Orthogonal",
+U_orth_DF <- function(Mat, variable.ubsRM = FALSE, ubsRM = NULL, perc.ubsRM = 0.02, ubss = NULL, variable.ubss = FALSE, perc.ubss = 0.05, Fitted.RS = FALSE, Forced.Fitted.RS = FALSE, Regression = "Orthogonal",
                       Verbose = FALSE, Add.ubss = TRUE, Versus = NULL) {
-    #checking that the Mat  is not empty
+    #checking that the Mat is not empty
     if (exists("Mat") && !is.null(Mat) && nrow(Mat)>0) {
         
-        # Setting Versus with xis is not NULL
+        # Setting Versus with xis if NULL
         if (is.null(Versus)) Versus <- "xis"
-        data.table::setkeyv(Mat, Versus)
         
         # Setting column names and adding ubsRM and ubss as constant values
         colnames(Mat) <- c("case", "Date", Versus, "yis","ubsRM", "ubss")[1:length(colnames(Mat))]
         
-        # Convert Mat to data.table if needed
-        if (!"data.table" %in% class(Mat)) Mat <- data.table(Mat, key = "Date")
+        # Convert Mat to data.table if needed, order on versus
+        if (!"data.table" %in% class(Mat)) Mat <- data.table(Mat)
+        data.table::setkeyv(Mat, Versus)
+        
         # Filtering for the validation data only
         Mat <- Mat[is.finite(rowSums(Mat[, c(Versus,"yis"), with = FALSE]))]
         if (!nrow(Mat) > 0) return(futile.logger::flog.error("[U_orth_DF] Mat does not contains any complete rows with xis and yis"))
         
         # Setting ubsRM and ubss in Mat
         if (!variable.ubsRM) {
-            if (!is.null(ubsRM)) data.table::set(Mat,  j = "ubsRM", value = rep(ubsRM, nrow(Mat))) 
+            stopifnot(!is.null(ubsRM))
+            data.table::set(Mat,  j = "ubsRM", value = rep(ubsRM, nrow(Mat))) 
         } else if (!"ubsRM" %in% names(Mat)) {
-            return(futile.logger::flog.error("[U_orth_DF] u(bs,RM) not given in data.table Mat. Stopping the function."))
-        }  else Mat$ubsRM = perc.ubsRM * Mat[[Versus]]
-        if (!variable.ubss) {
-            if (!is.null(ubss)) data.table::set(Mat,  j = "ubss", value = rep(ubss, nrow(Mat)))
-        } else if (!"ubss" %in% names(Mat)) {
-            return(futile.logger::flog.error("[U_orth_DF] u(bs,s) not given in data.table Mat. Stopping the function."))
-        } else Mat$ubss = perc.ubss * Mat[["yis"]]
+            Mat[, ubsRM := perc.ubsRM * Mat[[Versus]]]
+            futile.logger::flog.info("[U_orth_DF] computing u(bs,RM) as ", 100 * perc.ubsRM," percents of reference data (Mat$xis).")
+        }  else futile.logger::flog.info(paste0("[U_orth_DF] using u(bs,RM) provided in Mat."))
+        if (Add.ubss){
+            if (!variable.ubss) {
+                stopifnot(!is.null(ubss))
+                data.table::set(Mat,  j = "ubss", value = rep(ubss, nrow(Mat)))
+            } else if (!"ubss" %in% names(Mat)) {
+                Mat[, ubss := perc.ubss * Mat$yis]
+                futile.logger::flog.info("[U_orth_DF] computing u(bs,s) as ", 100 * perc.ubss," percents of sensor data (Mat$xis).")
+            } else futile.logger::flog.info(paste0("[U_orth_DF] using u(bs,s) provided in Mat."))}
         
         # Determination of delta for Deming or orthogonal regression
         if (Regression == "Deming") {
@@ -153,7 +162,7 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
         futile.logger::flog.info("[U_orth_DF] Breusch-Pagan: null hypothesis means constant variance of residuals along x axis (homoscedacity). The hyposthesis is rejected if p-value < 0.05 (heteroscedacity)")
         futile.logger::flog.info(paste0("[U_orth_DF] and the residuals would be heteroscedastic with 0.95 level of statistical confidence. Finally, p-value =  ", format(rtest$p.value, digits = 4)))
         if (!is.na(rtest$p.value) && Fitted.RS && (rtest$p.value < 0.05 || Forced.Fitted.RS)) {
-            futile.logger::flog.info("[U_orth_DF] The variance of residuals is not constant. RSS is calculated after applying a General Additive Model fitting.")
+            futile.logger::flog.info("[U_orth_DF] The variance of residuals is not constant. RSi are calculated after applying a General Additive Model fitting.")
             # Fitting with gam Vs Versus ("Xi")
             # if any y value is zero getting Warning: Error in eval: non-positive values not allowed for the 'gamma' family (we had 0.5 % of min(xis) to avoid this
             
@@ -197,38 +206,39 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
             plot(sqrt(Mat$residuals^2) ~ get(Versus), data = Mat, type = "p", col = col, xlab = Versus)
             lines(Mat[[Versus]],sqrt(Mat[["RS"]]), col = "red", xlab = Versus); grid()}
         
-        # Checking if RSS^2 - Mat$ubsRM^2 < 0 that results in an error using sqrt(RSS^2 - Mat$ubsRM^2) of the rs.RSS. Replacing with 0
-        neg.RSS <- which(Mat$RS - Mat[["ubsRM"]]^2 < 0)
+        # Checking if RSS^2 - Mat$ubsRM^2 + Mat$ubss^2 < 0 that results in an error using sqrt(RSS^2 - Mat$ubsRM^2) of the rs.RSS. Replacing with 0
+        # and Calculating parameters for modified Target diagram Rel.bias and Rel.RSS
+        if (Add.ubss) neg.RSS <- which(Mat$RS - Mat[["ubsRM"]]^2 + Mat[["ubss"]]^2 < 0) else neg.RSS <- which(Mat$RS - Mat[["ubsRM"]]^2 < 0)
         if (length(neg.RSS) > 0) {
-            futile.logger::flog.warn("[U_orth_DF] Some \"RSS/(nb - 2) - ubsRM^2\" are negative and square roots cannot be calculated.")
+            futile.logger::flog.warn("[U_orth_DF] Some \"RS - ubsRM^2\" are negative and square roots cannot be calculated.")
             futile.logger::flog.info("[U_orth_DF] ubsRM maybe too high and could be modified.")
-            futile.logger::flog.info("[U_orth_DF] The \"RSS/(nb - 2) - ubsRM^2\" that are negative will be set to 0 when computing uncertainties.")
+            futile.logger::flog.info("[U_orth_DF] The \"RS - ubsRM^2\" that are negative will be set to 0 when computing uncertainties.")
+            
+            Mat[neg.RSS,  Rel.RSS := 0]
+            Positives <- setdiff(1:nrow(Mat),neg.RSS)
+            
+            if (length(Positives) > 0){
+                if (Add.ubss){
+                    Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,ubss]^2 + Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives][[Versus]]]
+                } else Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives][[Versus]]]}
         }  else {
             # mat$RS are not changed and they are already calculated
-            futile.logger::flog.info("[U_orth_DF] All \"RSS/(nb - 2) - ubsRM^2\" are positives. ubsRM makes sence.")}
-        #### Calculating parameters for modified Target diagram Rel.bias and Rel.RSS
-        Mat[, Rel.bias := 2 * (b0/Mat[[Versus]] + (b1 - 1))]
-        # (Mat$RS - Mat$ubsRM^2) cannot be negative, adding or not ubss
-        if (Add.ubss){
-            if (length(neg.RSS) == 0) {
+            futile.logger::flog.info("[U_orth_DF] All \"RSS/(nb - 2) or RSi - ubsRM^2\" are positives. ubsRM makes sence.")
+            
+            if (Add.ubss){
                 Mat[, Rel.RSS := 2 * sqrt(Mat$ubss^2 + Mat$RS - Mat$ubsRM^2) / Mat[[Versus]]]
-            } else {
-                Positives <- setdiff(1:nrow(Mat),neg.RSS)
-                if (length(Positives) > 0) Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,ubss]^2 + Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives][[Versus]]]
-                Mat[neg.RSS,  Rel.RSS := 0]}
-        } else {
-            if (length(neg.RSS) == 0) {
-                Mat[, Rel.RSS := 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat[[Versus]]]
-            } else {
-                Positives <- setdiff(1:nrow(Mat),neg.RSS)
-                if (length(Positives) > 0) Mat[Positives, Rel.RSS := 2 * sqrt(Mat[Positives,RS] - Mat[Positives,ubsRM]^2) / Mat[Positives][[Versus]]]
-                Mat[neg.RSS,  Rel.RSS := 0]}} 
+            } else Mat[, Rel.RSS := 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat[[Versus]]]
+        }
+        Mat[, Rel.bias := 2 * (b0/Mat[[Versus]] + (b1 - 1))]
+        
         #### Calculating uncertainty
         Mat[, Ur := sqrt(Mat$Rel.bias^2 + Mat$Rel.RSS^2) * 100]
         Mat[, U  := Mat$Ur / 100 * Mat[[Versus]]]
-        # Indicators
-        Mat[, Max.ubsRM := sqrt(RSS/(nb-2) + Mat$bias^2)]
-        Mat[, Max.RSD   := sqrt(RSS/(nb-2) + Mat$bias^2)/Mat[[Versus]]]
+        
+        # Indicators for ubsRM
+        Mat[, Max.ubsRM := sqrt((Mat$Rel.RSS * Mat[[Versus]] / 2)^2 + Mat$ubsRM^2 + Mat$bias^2)]
+        Mat[, Max.RSD   := Max.ubsRM / Mat[[Versus]]]
+        
         # Printing
         if (Verbose) {
             cat("--------------------------------\n")
@@ -247,11 +257,11 @@ U_orth_DF <- function(Mat, ubsRM = NULL, variable.ubsRM = FALSE, perc.ubsRM = 0.
             cat(sprintf("CRMSE: %.4g ",CRMSE), "\n")
             cat(sprintf("NMSD : %.4g ",NMSD), "\n")
             cat(sprintf("n    : %.4g ",nb), "\n")}
-        calib <- list(mo,sdo, mm,sdm, b1, ub1, b0, ub0, RSS, rmse, mbe, Correlation, nb, CRMSE, NMSD, Mat, Fitted.RS, Regression)
+        calib <- list(mo,sdo, mm,sdm, b1, ub1, b0, ub0, RSS, rmse, mbe, Correlation, nb, CRMSE, NMSD, Mat, Fitted.RS, Regression, Add.ubss = Add.ubss)
     } else {
         cat("Mat is empty. Returning NAs.")
-        calib <- list(mo = NA,sdo = NA, mm = NA,sdm = NA, b1 = NA, ub1 = NA, b0 = NA, ub0 = NA, RSS = NA,rmse = NA, mbe = NA, Correlation = NA, nb = NA, CRMSE = NA, NMSD = NA, Mat = NA, Regression = Regression)}
-    names(calib) <- c("mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD", "Mat", "RS.Fitted", "Regression")
+        calib <- list(mo = NA,sdo = NA, mm = NA,sdm = NA, b1 = NA, ub1 = NA, b0 = NA, ub0 = NA, RSS = NA,rmse = NA, mbe = NA, Correlation = NA, nb = NA, CRMSE = NA, NMSD = NA, Mat = NA, Regression = Regression, Add.ubss = Add.ubss)}
+    names(calib) <- c("mo","sdo", "mm","sdm", "b1", "ub1", "b0", "ub0", "RSS","rmse", "mbe", "Correlation", "nb", "CRMSE", "NMSD", "Mat", "RS.Fitted", "Regression", "Add.ubss")
     
     # if (Verbose) print(data.frame(x              = Mat[[Versus]],
     #                               ubsRM          = Mat$ubsRM,
@@ -490,42 +500,63 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #' Plot a Modified Target Diagram ---
 #'
 #' @description 
-#' Base on script by Aaron Albin
+#' Based on script by Aaron Albin
 #' Use this script when the following is true:
-#' Inside Mat there are four sets of numeric data stored as three separate columns (xis, yis, Rel.bias, Rel.RSS).
-#' Slope and intercept of an OLS, Deming or orthognal regression fitted to Mat$yis vs Mat$yis are given. 
-#' xis, yis, Rel.bias, Rel.RSS, Slope and intercept are computed with function U_orth_DF().
-#' You wish to plot Rel.bias, Rel.RSS onto a 'scatterplot', where the horizontal axis corresponds to Rel.RSS and the vertical axis corresponds to Rel.bias.
-#' Each individual pair of numbers Rel.bias and Rel.RSS, then, is represented as a point in this two-dimensional space.
-#' @param Sensor_name name of the sensor to be written in front of the calibration equation. If NULL, do not print sensor name.
-#' @param Mat  Datatable or dataframe of data including Case number, Date, xis, yis, [ ubss and ubsRM if not constant], Rel.bias, Rel.RSS. Rel.bias, Rel.RSS, xis must be included into dataFrame Mat. It is easier to get it from function U.orth.df()
-#' @param ubsRM numeric (default = NULL ). Random standard uncertainty of the results of the reference method, xis, given as a constant value for all xis reference values
-#' @param ubss numeric (default = NULL ): Between standard uncertainty of the sensor, yis, given as a constant value for all yis sensor values
+#' - Inside Mat there are at least four numeric columns (xis, yis, Rel.bias, Rel.RSS).
+#' - Slope and intercept of an OLS, Deming or orthogonal regression fitted to Mat$yis vs Mat$yis shall be given (b0 and b1). 
+#' - xis, yis, Rel.bias, Rel.RSS, Slope and intercept are normally computed suing function U_orth_DF().
+#' - You wish to plot Rel.bias, Rel.RSS onto a 'scatterplot', where the horizontal axis corresponds to Rel.RSS and the vertical axis corresponds to Rel.bias.
+#' Each individual pair of numbers Rel.bias and Rel.RSS, then, is represented as a coloured point in this two-dimensional space where the color scale represents xis.
+#' 
+#' The relative expanded measurement uncertainty (Ur) is given by the distance between the origin (0, 0) and any point on the bold coloured line read on concentric circles.
+#' The color scale indicates the reference data (xis).
+#' The extent of random error (Rel.RSS) is read on the x-axis, the extent of relative bias (Rel.bias) is read on the y-axis.
+#' Within Rel.bias, the contribution of the slope (b1, thin vertical coloured line) and intercept (b0, thin oblique coloured line) are read on the x-axis.
+
+#' The primary use of the Modified Target Diagram is to check whether the Data Quality Objective (DQO) of indicative methods set in the European Directive (EC/50/2008) are satisfied.
+#' DQOs are satisfied when the Limit Value (LV) blue star found on the coloured bold line falls within the 1st target circle representing the DQO.
+#' The Modified Target Diagram gives additional information such as: 
+#'  . The bold coloured line being above the x-axis (1st or 4th quadrant) indicates an overestimation of the sensor compared to reference data. Conversely, the bold coloured line being below the x-axis (2nd or 3rd quadrant) indicates an underestimation of the sensor compared to reference data.
+#'  . Additionally, the bold coloured line being at the right of y-axis (1st or 2nd quadrant) indicates a higher sensitivity of the sensor compared to reference data. Conversely, the bold coloured line being at left of the y-axis (3rd or 4th quadrant) indicates a lower sensitivity of the sensor compared to reference data.
+#'  . Variation of contributors to Rel.bias: high contribution from b0 would indicate an offset between the sensor and reference data, possibly correctable by offset subtraction, while high contribution from b1 may indicate an erroneous slope of calibration, possibly correctable by re-calibration or readjustment. Significant contribution from b0 and/or b1 are evidenced when corresponding thin coloured line(s) are far from y-axis.
+#'  . The comparison of Rel.RSS and Rel.bias: overwhelming value of Rel.RSS compared to Rel.bias shows that Ur is dominated by the random errors likely resulting from several parameters including the electronic noise of sensor or by mis-calibration as missing covariates ...
+#'  . Improvement by adjustment of b0 and/or b1 in order to set the Rel.bias to zero: the adjustment of b0 and b1 could allow to set the Rel.bias to zero for the entire range reference data with a rotation of the bold coloured line.
+#'  However, this adjustment of b0 and b1 is only significant if Ur is not dominated by rel.RSS. In this case, setting the Rel.bias to zero by adjustment of b0 and b1 would not allow any significant decrease of Ur.
+#' 
+#' There are cases when the effects of b0 and b1 never cancel each other and thus Rel.bias never crosses the x-axis. Such cases might happen due to either:
+#'  . the contributions of b0 and b1 are located on the same side of the y-axis with the combinations of b0 negative and b1 < 1, or, b0 positive and b1 > 1;
+#'  . the contributions of b0 and b1 are located on different sides of the y-axis but one of these contributions is overwhelming with the b0 effect being higher than the b1 effect.
+#'  
+#' @param Sensor_name Optional, character string, default is NULL. Name of the sensor to be written in front of the calibration equation. If NULL (default), do not print sensor name.
+#' @param Mat  data.table or dataframe of data including Case number, Date, xis, yis, [ubss and ubsRM if not constant], Rel.bias, Rel.RSS. Rel.bias, Rel.RSS and xis shall be included into dataFrame Mat.
+#' It is easier to get this data.table from function U_orth_DF()
+#' @param variable.ubsRM logical, default is FALSE. If FALSE ubsRM is a constant random standard uncertainties and if TRUE ubsRM is different for each reference data. ubsRM is printed on the plot only if variable.ubsRM is FALSE.
+#' @param ubsRM numeric, default is NULL. Random between standard uncertainty of the reference data, xis, given as a constant value for all xis reference values. Only required if variable.ubsRM is FALSE.
+#' @param with.ubss: logical, default is TRUE. If FALSE, Rel.RSS is computed without adding ubss. In this case Rel.RSS = 2 * (sqrt((Mat$RS - ubsRM^2) / Mat$xis). 
+#'                   This useful if Mat is generated adding ubss while user wants to plot the Modified Target Diagram without ubss.
+#'                   If TRUE Rel.RSS should be 2 * (sqrt(ubss^2 + Mat$RS - ubsRM^2)/ Mat$xis) but it is only possible to compute Rel.RSS if Mat includes a column ubss. This is generally not the case and Mat shalle be regernrated using function U_orth_DF()..
+#' @param variable.ubss logical, default is FALSE. If FALSE ubss is a constant random standard uncertainties and if TRUE ubss is different for each reference data. ubss is printed on the plot only if variable.ubss is FALSE.
+#' @param ubss numeric, default is NULL, Between standard uncertainty of the sensor, yis, given as a constant value for all yis sensor values
 #' @param b0, numeric, intercept of the orthogonal regression, default: NULL. If not NULL b0/xi is plotted
 #' @param b1 numeric, slope of the orthogonal regression, default is NULL. If not NULL b1 - 1 is plotted
 #' @param Unit.Ref Character, default is NULL. Unit of reference values, can "ppm", "ppb", "ug/m3", "mg/m3" ...
 #' @param Unit.sensor character vector, unit for the expanded uncertainty of yis and yis. Default is Unit.Ref.
 #' @param Xlabel,Ylabel label of the x and axis
-#' @param Xlim,Ylim limits of x and y axis, default values is NA, vectors of two values min and max values. Xlim and Ylim overruled Max.percent
-#' @param Max.percent: numeric in percent, maximum extent of the x and y axis of the Target Diagram. This is respected provided that Ur smaller than Max.percent exist. See DQO.3 is Max.percent is NULL.
-#' @param MainTitle character, title to appear On the top of the scatter plot of x And y values - NOT USED ANYMORE
+#' @param Xlim,Ylim limits of x and y axis, default values is NA, vectors of two values min and max values. Xlim and Ylim is superseeded by Max.percent. Avoid using them.
+#' @param Max.percent Optional, numeric in percent, default is NULL. Maximum extent of the x and y axis of the Target Diagram. This is respected provided that there exists Ur smaller than Max.percent. If NULL, DQO.3 is Max.percent.
+#' @param MainTitle character, title to appear On the top of the Modified Target Diagram
 #' @param DQO.1,DQO.2,DQO.3 numeric, data quality objectives for Indicative measurements, Modelling and objective estimation. Default is NA, if NA no DQO target circle is plotted. The DQOs are expressed as real values, not in percentage. Use function get.DQO. The xaxis is limited to 3 times DQO if Max.percent is NULL.
 #' @param LAT,UAT,LV,AT,CL numeric, lower and upper assessment threshold, limit value, Alert threshold and Critical level of the European Air Quality Directive for Mat$xis, same unit as Mat$xis, default value = NA, used for color scale and target circles
-#' @param Disk,WD,Dir Character vectors where you put the graphic files (Disk, working directory, directory), It is sufficient if only Dir is supplied
-#' @param variable.ubsRM logical (default = FALSE ). If FALSE ubsRM is used as constant random standard uncertainties for all xis reference values. If TRUE ubsRM given in Mat and is used for each reference values
 #' @param f_coef1,f_coef2,f_R2 numeric, number of digit for intercept, slope and R2 using sprintf syntax. f_coef1 is used both for intercept and s(Res), f_coef2 is used for all parameters of the model apart from the intercept
 #' @param nameModel character, name of model to be used to save uncertainty plots, character, default NULL
 #' @param sdm_sdo logical, default is NULL. It shall be TRUE if the standard deviation of yis is lower than the one of xi and conversely.
 #' If Null, sdm_sdo is determined using sd(Mat[Index.Good, yis]) and sd(Mat[Index.Good, yis])
-#' @param SavePlot logical, default is TRUE if TRUE uncertainty polts are saved
-#' @param Model.used character, default is NULL. Name of calibration model used to compute yis. Only used if MainTitle is null.
+#' @param Model.used character string, default is NULL. Name of calibration model used to compute yis. Only used if MainTitle is null.
 #' @param BeginEnd character vector representing the starting and ending date, default is null. Only used if MainTitle is null.
 #' @param Time.average: numeric, default is null. Tme average in minutes. . Only used if MainTitle is null.
-#' @param with.ubss: logical, default is TRUE. If FALSE, ubss is subtracted to Rel.RSS. In this case Rel.RSS = 2 * (sqrt((Mat$RS - ubsRM^2) / Mat$xis). 
-#'                   If TRUE Rel.RSS is 2 * (sqrt(ubss^2 + Mat$RS - ubsRM^2)/ Mat$xis)
 #' @param Ref_Analysers name of reference analyser, default is NULL. If not null the name is added in Target_diagram
 #' @param Show.Diag.Ur logical, default is TRUE. If TRUE a diagonal is printed between the origin and farest point, indicating relative expanded measurement uncertainty. A that the point the contribution of Bias and Relative Error is also plotted.
-#' @return Plot a Target diagram that is saved as pdf file provided that SavePlot is TRUE and unless error message is returned.
+#' @return Plot a Target diagram unless error unless an error message is returned.
 #'
 #' @import data.table
 #' @import car
@@ -540,31 +571,35 @@ get.DQO <- function(gas.sensor = NULL, name.sensor = NULL, name.gas = NULL, Aver
 #'
 #' @noRd
 #'
-Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NULL, b1 = NULL,  Unit.Ref = NULL, Unit.sensor = Unit.Ref,
-                           xAxisLabel = NULL, yAxisLabel = NULL, Xlim = NA, Ylim = NA, MainTitle = NULL,
+Target.Diagram <- function(Sensor_name, Mat, variable.ubsRM = FALSE, ubsRM = NULL, with.ubss = TRUE, variable.ubss = FALSE, ubss = NULL, b0 = NULL, b1 = NULL,
+                           Unit.Ref = NULL, Unit.sensor = Unit.Ref, xAxisLabel = NULL, yAxisLabel = NULL, Xlim = NA, Ylim = NA, MainTitle = NULL,
                            DQO.1 = NA, DQO.2 = NA, DQO.3 = NA, CL = NA, IT = NA, AT = NA, LV = NA, LAT = NA, UAT = NA,
-                           Disk = NA, WD = NA, Dir = NA, sdm_sdo = NULL, SavePlot = TRUE,
-                           Model.used = NULL, BeginEnd = NULL, Time.average = NULL, Max.percent = NULL, with.ubss = TRUE, Ref_Analysers = NULL,
-                           Regression = "OLS", Fitted.RS  = FALSE, variable.ubsRM = FALSE, Show.Diag.Ur = TRUE) {
+                           sdm_sdo = NULL, Model.used = NULL, BeginEnd = NULL, Time.average = NULL, Max.percent = NULL, Ref_Analysers = NULL,
+                           Regression = "OLS", Fitted.RS  = FALSE, Show.Diag.Ur = TRUE) {
+    
     #=====[Consistency checks]=====
-    # Ordering Mat according to xis to be able to create a color pallete e
-    Mat <- Mat[order(Mat$xis),]
     #checking that Mat is dataFrame
-    if (!is.data.frame(Mat) || !is.data.table(Mat)) return(futile.logger::flog.error("[Target.Diagram] Mat is not a data.table or dataFrame.")) 
+    stopifnot(is.data.frame(Mat) || is.data.table(Mat))
     # convert to data.table if needed
-    if (!is.data.table(Mat)) Mat <- data.table(Mat, key = "date")
+    if (!is.data.table(Mat)) Mat <- data.table(Mat)
     #checking that the mat dataFrame is not empty, considering only the complete cases with Xis and yis > 0
-    Mat <- Mat[complete.cases(Mat) & xis > 0 & yis > 0,]
-    if (!nrow(Mat) > 0) return(futile.logger::flog.error("[Target.Diagram] Mat is empty or not complete. Returning NAs.\n"))
+    Mat <- Mat[is.finite(rowSums(Mat[, c("xis", "yis")]))]
+    stopifnot(nrow(Mat) > 0)
+    # Ordering Mat according to xis to be able to create a color pallete e
+    stopifnot("xis" %in% names(Mat))
+    setkey(Mat, key = "xis")
     # checking if Mat includes "Rel.bias", "Rel.RSS", "xis"
-    if (!all(c("Rel.bias", "Rel.RSS", "xis") %in% colnames(Mat)) || any(is.null(c("b0","b1")))) {
-        return(futile.logger::flog.error("[Target.Diagram] Mat does not contain Rel.bias, Rel.RSS or xis or b0 and/or b1 are null.\n"))} 
+    stopifnot("Rel.bias" %in% names(Mat))
+    stopifnot("Rel.RSS" %in% names(Mat))
+    stopifnot(!is.null("b0"))
+    stopifnot(!is.null("b1"))
+    
     # plotting the Target Diagram
     # Create X-Y scatterplot: Coded by color by Aaron Albin
     #=====[Set XData, YData, b0 and b1 variables]=====
     # Rel.RSS is on the x axis
     # Rel.Bias is on the y axis
-    # Values are multiplied by 100 to plot in percentage
+    # Recalculating uncertainty according to with.ubss. checking if Rel.RSS is negative and set to 0
     if (!with.ubss) {
         Sign.RS <- Mat$RS - Mat$ubsRM^2
         Negative.RS <- which(Sign.RS < 0)
@@ -572,7 +607,20 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
             data.table::set(Mat, i = Negative.RS, j = "Rel.RSS", value = rep(0, times = length(Negative.RS)))
             Positive.RS <- setdiff(seq(Sign.RS), Negative.RS)
             if (length(Positive.RS) > 0) data.table::set(Mat, i = Positive.RS, j = "Rel.RSS", value = 2 * sqrt(Mat$RS[Positive.RS] - Mat$ubsRM[Positive.RS]^2) / Mat$xis[Positive.RS])
-        } else data.table::set(Mat, j = "Rel.RSS", value = 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat$xis)}
+        } else data.table::set(Mat, j = "Rel.RSS", value = 2 * sqrt(Mat$RS - Mat$ubsRM^2) / Mat$xis)
+    } else {
+        stopifnot("ubss" %in% names(Mat))
+        Sign.RS <- (Mat$RS - Mat$ubsRM^2 + Mat$ubss^2)
+        Negative.RS <- which(Sign.RS < 0)
+        if (length(Negative.RS) > 0) {
+            data.table::set(Mat, i = Negative.RS, j = "Rel.RSS", value = rep(0, times = length(Negative.RS)))
+            Positive.RS <- setdiff(seq(Sign.RS), Negative.RS)
+            if (length(Positive.RS) > 0) data.table::set(Mat, i = Positive.RS, j = "Rel.RSS", value = 2 * sqrt(Mat$RS[Positive.RS] - Mat$ubsRM[Positive.RS]^2 + Mat$ubss^2) / Mat$xis[Positive.RS])
+        } else data.table::set(Mat, j = "Rel.RSS", value = 2 * sqrt(Mat$RS - Mat$ubsRM^2 + Mat$ubss^2) / Mat$xis)
+    }
+    Mat[, U  := sqrt(Rel.RSS^2 + Rel.bias^2) * xis]
+    # Values are multiplied by 100 to plot in percentage
+    Mat[, Ur := U/ xis * 100]
     Mat[, XData :=  Rel.RSS * 100]
     Mat[, YData :=  Rel.bias * 100]
     # re-computing Ur in case RSS was changed
@@ -775,7 +823,7 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
                            list(Text.Dates = Text.Dates, b0.Digits = format(round(b0,2), digits = 2), b1.Digits = format(round(b1, digits = 2), nsmall = 2), Type.Regression = Regression,ubs_RM.Digits = format(round(ubsRM, 2), digits = 2), 
                                 Unit.Ref = Unit.Ref, Ref_Analysers = Ref_Analysers))
     }
-    if (with.ubss) Text <- substitute(paste(Text," and u"[bs_s]," = ", ubss.Digits, " ", Unit.sensor), list(Text = Text,ubss.Digits = format(round(ubss,2), digits = 2), Unit.sensor = Unit.sensor))
+    if (with.ubss && variable.ubss) Text <- substitute(paste(Text," and u"[bs_s]," = ", ubss.Digits, " ", Unit.sensor), list(Text = Text,ubss.Digits = format(round(ubss,2), digits = 2), Unit.sensor = Unit.sensor))
     if (Unit.Ref == "ppm" || Unit.Ref == "mg/m3") {
         mtext(text = Text, side = 3, line = 0.1, cex  = 0.65)
     } else {
@@ -817,26 +865,11 @@ Target.Diagram <- function(Sensor_name, Mat, ubsRM = NULL, ubss = NULL, b0 = NUL
         if (length(Steps) > 0) {
             contour(x = x, y = y, z = z, col = "grey", add = TRUE, method = "edge", levels = Steps,
                     vfont = NULL, axes = FALSE, frame.plot = axes, lty = 'dotdash', lwd = 1, labcex = 0.7)
-            # for (Step.level in Steps) {
-            #     cercle <- rbind(cbind(seq(-Step.level, Step.level, by =  Step.level/1000),  sqrt(Step.level^2 - seq(-Step.level,Step.level, by = Step.level/1000)^2)),
-            #                     cbind(seq( Step.level,-Step.level, by = -Step.level/1000), -sqrt(Step.level^2 - seq(-Step.level,Step.level, by = Step.level/1000)^2)))
-            #     lines(cercle,type = "l", lty = GridlineType, col = GridlineColor)
-            #     text(x = Step.level/Dist.Quadrants * usr[usr.Quadrant[1]],
-            #          y = Step.level/Dist.Quadrants * usr[usr.Quadrant[2]],
-            #          paste0(Step.level,"%"),
-            #          pos = ifelse(sdm_sdo,2,4),
-            #          cex = 0.8)}
         }
         
         # Plotting DQOs
         contour(x = x, y = y, z = z, col = "black", add = TRUE, method = "edge", levels = c(DQO.1*100, DQO.2*100, DQO.3*100),
                 vfont = NULL, axes = axes, frame.plot = axes, lty = 'solid', lwd  = 2, labcex = 0.8)
-        # for (i in c(DQO.1*100, DQO.2*100, DQO.3*100)) {
-        #     if (!is.na(i)) {
-        #         cercle <- rbind(cbind(seq(-i, i, by =  i/1000),  sqrt(i^2 - seq(-i,i, by = i/1000)^2)),
-        #                         cbind(seq( i,-i, by = -i/1000), -sqrt(i^2 - seq(-i,i, by = i/1000)^2)))
-        #         lines(cercle,type = "l")
-        #         text(x = i/Dist.Quadrants * usr[usr.Quadrant[1]], y = i/Dist.Quadrants * usr[usr.Quadrant[2]], paste0(i,"%"), pos = ifelse(sdm_sdo,2,4), cex = 0.8)}}
     }
     #=====[Arrows]=====
     # Plotting segments for relative measurement uncertainty
