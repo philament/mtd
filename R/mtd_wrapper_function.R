@@ -49,7 +49,7 @@
 #' @param sensor_name Optional, character string, default is NULL. Name of the sensor to be written in front of the calibration equation. If NULL (default), do not print sensor name.
 #' @param Max.percent Optional, numeric in percent, default is NULL. Maximum extent of the x and y axis of the Target Diagram. This is respected provided that there exists Ur smaller than Max.percent. If NULL, DQO.3 is Max.percent .
 #' @param x_axis_label,y_axis_label Optional. Character string. Labels of the x and y axes.
-#' @param Show.Diag.Ur OPtional, logical, default is FALSE. If TRUE a diagonal is printed between the origin and farest point, indicating relative expanded measurement uncertainty. A that the point the contribution of Bias and Relative Error is also plotted.
+#' @param Show.Diag.Ur Optional, logical, default is FALSE. If TRUE a diagonal is printed between the origin and farest point, indicating relative expanded measurement uncertainty. A that the point the contribution of Bias and Relative Error is also plotted.
 
 
 #' @param Verbose Optional, logical, default is FALSE. If TRUE messages are displayed during execution.
@@ -59,12 +59,13 @@
 #'
 #' @examples
 #' data(pm25)
+#' # Simple example for a PM2.5 sensor. The between reference standard uncertainty, ubsRM, is assumed to be constant along the PM2.5 range of concentrations. The relative expanded measurement uncertainty, Ur, is computed without adding any between sensor standard uncertainty, ubss. Ordinary Lest Square is used to compute the regression line. The default unit for sensor and reference data: 'ug/m3' is used.
 #' mtd(pollutant = 'PM2.5',
 #'     dates = pm25$datetime,
 #'     reference_data = pm25$reference_pm25,
 #'     sensor_data = pm25$sensor_pm25,
-#'     ubsRM = 0.5,
-#'     ubss = 5)
+#'     ubsRM = 0.5)
+#' # Example for a PM2.5 sensor with ubsRM being fitted along the PM2.5 range of concentrations. The relative expanded measurement uncertainty, Ur, is computed adding a constant between sensor standard uncertainty, ubss, of 2 µg/m³. Ordinary Lest Square is used to compute the regression line. The default unit for sensor and reference data: 'ug/m3' is used.
 #' mtd(pollutant = 'PM2.5',
 #'     dates = pm25$datetime,
 #'     reference_data = pm25$reference_pm25,
